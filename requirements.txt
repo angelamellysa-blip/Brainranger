@@ -1,0 +1,7 @@
+python-telegram-bot==20.7
+apscheduler==3.10.4
+anthropic
+google-cloud-texttospeech
+gspread
+google-auth
+python-dotenv
