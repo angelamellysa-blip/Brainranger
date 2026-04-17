@@ -1,6 +1,6 @@
 import base64
-import anthropic
 import os
+import anthropic
 from prompts.smp import SMP_PROMPT
 from prompts.sd4 import SD4_PROMPT
 from prompts.sd1 import SD1_PROMPT
@@ -16,7 +16,7 @@ PROMPTS = {
 def get_system_prompt(level):
     return PROMPTS.get(level, SMP_PROMPT)
 
-async def process_photos(photo_bytes_list, ranger):
+def process_photos(photo_bytes_list, ranger):
     content = []
 
     for photo_bytes in photo_bytes_list:
@@ -56,7 +56,6 @@ def parse_response(text):
     }
 
     current = None
-    buffer = []
 
     for line in text.split("\n"):
         line = line.strip()
@@ -72,9 +71,9 @@ def parse_response(text):
             sections["rangkuman"] += line + "\n"
         elif current in ("soal", "kunci", "pembahasan"):
             if line and line[0].isdigit() and "." in line:
-                buffer = line.split(".", 1)
-                if len(buffer) > 1:
-                    sections[current].append(buffer[1].strip())
+                parts = line.split(".", 1)
+                if len(parts) > 1:
+                    sections[current].append(parts[1].strip())
             elif line and sections[current]:
                 sections[current][-1] += " " + line
 

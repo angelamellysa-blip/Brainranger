@@ -102,9 +102,9 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         # Proses semua foto ke Claude — 1 API call
-        result = await asyncio.to_thread(
-            lambda: __import__('asyncio').get_event_loop().run_until_complete(
-                process_photos(photos, ranger)
+       try:
+        # Proses semua foto ke Claude — 1 API call
+        result = await asyncio.to_thread(process_photos, photos, ranger)
             )
         )
     except Exception as e:
