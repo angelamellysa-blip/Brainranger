@@ -1,3 +1,4 @@
+import os
 import asyncio
 from datetime import datetime
 from telegram import Update
@@ -117,6 +118,28 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, chunk in enumerate(chunks):
         prefix = f"(Rangkuman {i+1}/{len(chunks)})\n" if len(chunks) > 1 else ""
         await update.message.reply_text(prefix + chunk)
+
+    # Generate & kirim podcast audio
+    try:
+        from handlers.tts import generate_podcast
+        podcast_path = await asyncio.to_thread(
+            generate_podcast,
+            rangkuman,
+            ranger["name"],
+            ranger["level"]
+        )
+        with open(podcast_path, "rb") as audio:
+            await update.message.reply_audio(
+                audio=audio,
+                title=f"Podcast Materi - {ranger['name']}",
+                caption="Dengerin sambil belajar ya! 🎧",
+            )
+        os.remove(podcast_path)
+    except Exception as e:
+        print(f"TTS error: {e}")
+        await update.message.reply_text(
+            "Audio podcast tidak tersedia, tapi rangkuman text sudah ada ya!"
+        )
 
     soal_text = "❓ Soal latihan:\n\n"
     for i, soal in enumerate(result["soal"]):
