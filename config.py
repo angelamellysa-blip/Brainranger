@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-
+BRAINRANGER_AI_ANT_KEY = os.getenv("BRAINRANGER_AI_ANT_KEY")
 # ── Telegram ──────────────────────────────────────────
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 PARENT_CHAT_ID = int(os.getenv("PARENT_CHAT_ID", "0"))

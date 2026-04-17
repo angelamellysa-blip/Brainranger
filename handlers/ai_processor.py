@@ -5,7 +5,8 @@ from prompts.smp import SMP_PROMPT
 from prompts.sd4 import SD4_PROMPT
 from prompts.sd1 import SD1_PROMPT
 
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+from config import BRAINRANGER_AI_ANT_KEY
+client = anthropic.Anthropic(api_key=BRAINRANGER_AI_ANT_KEY)
 
 PROMPTS = {
     "SMP": SMP_PROMPT,
