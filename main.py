@@ -5,7 +5,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from config import TELEGRAM_BOT_TOKEN, PARENT_CHAT_ID, REMINDER_HOUR, REMINDER_MINUTE, get_ranger, is_ranger, is_parent
 from handlers.pomodoro import (
     handle_mulai, handle_photo, handle_selesai,
-    handle_lanjut, handle_skip, get_state, init_session
+    handle_lanjut, handle_skip, handle_answer,
+    get_state, init_session
 )
 
 logging.basicConfig(
@@ -105,6 +106,9 @@ def main():
     app.add_handler(CommandHandler("skip",          handle_skip))
     app.add_handler(CommandHandler("testreminder",  test_reminder))
     app.add_handler(MessageHandler(filters.PHOTO,   handle_photo))
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND, handle_answer
+    ))
 
     app.job_queue.run_daily(
         send_reminders,
