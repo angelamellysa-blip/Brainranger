@@ -112,6 +112,20 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Cek apakah foto tidak terbaca
+    if result["rangkuman"].startswith("FOTO_TIDAK_TERBACA"):
+        await update.message.reply_text(
+            f"{ranger['emoji']} Foto kurang jelas nih!\n\n"
+            f"Tips foto yang bagus:\n"
+            f"• Pastikan cahaya cukup terang\n"
+            f"• Kamera tegak lurus di atas buku\n"
+            f"• Tulisan tidak terlipat atau tertutup\n"
+            f"• Jarak kamera sekitar 20-30cm dari buku\n\n"
+            f"Coba ketik /mulai dan upload foto ulang ya!"
+        )
+        init_session(chat_id)
+        return
+
     # Simpan ke state
     state["questions"] = result["soal"]
     state["keys"] = result["kunci"]
