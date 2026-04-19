@@ -46,6 +46,11 @@ def process_photos(photo_bytes_list, ranger):
         messages=[{"role": "user", "content": content}]
     )
 
+    # DEBUG: lihat raw response dari Claude
+    raw = response.content[0].text
+    print(f"DEBUG RAW RESPONSE:\n{raw[:500]}")
+
+
     return parse_response(response.content[0].text)
 
 def evaluate_answer(soal, jawaban_anak, kunci_jawaban, level):

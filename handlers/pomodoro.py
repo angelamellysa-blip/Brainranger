@@ -6,8 +6,9 @@ from telegram.ext import ContextTypes
 from config import get_ranger, PARENT_CHAT_ID
 from handlers.ai_processor import process_photos, evaluate_answer
 from utils.message_splitter import split_message
+from utils.state_manager import load_all_states, save_all_states
 
-session_state = {}
+session_state = load_all_states()
 
 def init_session(chat_id):
     session_state[chat_id] = {
@@ -28,6 +29,7 @@ def init_session(chat_id):
         "current_question": 0,
         "correct_count": 0,
     }
+    save_all_states(session_state)
 
 def get_state(chat_id):
     if chat_id not in session_state:
@@ -41,16 +43,11 @@ async def handle_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ranger:
         return
 
-    # Reset session state sepenuhnya setiap /mulai
     init_session(chat_id)
-    print(f"DEBUG: Session reset untuk {ranger['name']} - chat_id: {chat_id}")
-    state = get_state(chat_id)
-    print(f"DEBUG: State setelah reset: questions={state['questions']}, keys={state['keys']}")
-
     state = get_state(chat_id)
     state["waiting_for_photo"] = True
     state["current_session"] = 1
-
+    save_all_states(session_state)
 
     await update.message.reply_text(
         f"{ranger['emoji']} {ranger['ranger']} siap tempur!\n\n"
@@ -88,6 +85,17 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     state = get_state(chat_id)
+
+    # Force reset data lama
+    state["questions"] = []
+    state["keys"] = []
+    state["pembahasan"] = []
+    state["rangkuman"] = ""
+    state["answers"] = []
+    state["correct_count"] = 0
+    state["current_question"] = 0
+    state["awaiting_answers"] = False
+
     if not state.get("waiting_for_photo"):
         return
 
@@ -133,6 +141,7 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["rangkuman"] = result["rangkuman"]
     state["waiting_for_photo"] = False
     state["pending_photos"] = []
+    save_all_states(session_state)
 
     # ── SESI 1: Kirim rangkuman + audio ──────────────
     rangkuman = result["rangkuman"]
@@ -165,7 +174,8 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Start timer sesi 1
     state["active"] = True
-    state["session_start"] = datetime.now()
+    state["session_start"] = datetime.now().isoformat()
+    save_all_states(session_state)
 
     context.job_queue.run_once(
         session_end,
@@ -189,9 +199,9 @@ async def session_end(context: ContextTypes.DEFAULT_TYPE):
     session = job.data["session"]
     state = get_state(chat_id)
     state["active"] = False
+    save_all_states(session_state)
 
     if session == 1:
-        # Sesi 1 selesai → minta /lanjut untuk mulai test
         await context.bot.send_message(
             chat_id=chat_id,
             text=(
@@ -201,10 +211,10 @@ async def session_end(context: ContextTypes.DEFAULT_TYPE):
             )
         )
     else:
-        # Sesi 2 selesai → recap lengkap
         state["all_sessions_done"] = True
         total_q = len(state["questions"])
         correct = state["correct_count"]
+        save_all_states(session_state)
 
         await context.bot.send_message(
             chat_id=chat_id,
@@ -234,12 +244,22 @@ async def handle_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     state = get_state(chat_id)
+
+    # Validasi — pastikan ada soal
+    if not state.get("questions"):
+        await update.message.reply_text(
+            f"{ranger['emoji']} Belum ada materi yang diproses.\n"
+            f"Ketik /mulai dulu ya!"
+        )
+        return
+
     state["active"] = True
     state["current_session"] = 2
     state["awaiting_answers"] = True
     state["current_question"] = 0
     state["answers"] = []
     state["correct_count"] = 0
+    save_all_states(session_state)
 
     await update.message.reply_text(
         f"{ranger['emoji']} Sesi 2 dimulai — saatnya ditest! 📝\n\n"
@@ -299,7 +319,7 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pembahasan = state["pembahasan"][current_q] if current_q < len(state["pembahasan"]) else ""
     soal = state["questions"][current_q]
 
-    # Evaluasi jawaban via Claude — flexible matching
+    # Evaluasi jawaban via Claude
     try:
         is_correct = await asyncio.to_thread(
             evaluate_answer,
@@ -309,7 +329,6 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ranger["level"]
         )
     except Exception:
-        # Fallback ke string matching kalau Claude error
         is_correct = (
             answer.lower() == correct_answer.lower() or
             answer.lower() in correct_answer.lower() or
@@ -328,19 +347,20 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(result_text)
 
     state["current_question"] += 1
+    save_all_states(session_state)
 
     # Cek apakah semua soal sudah dijawab
     if state["current_question"] >= len(state["questions"]):
         state["awaiting_answers"] = False
         correct = state["correct_count"]
         total_q = len(state["questions"])
+        save_all_states(session_state)
         await update.message.reply_text(
             f"{ranger['emoji']} Semua soal selesai sebelum timer!\n\n"
             f"Skor: {correct}/{total_q} benar\n"
             f"Timer masih jalan — bisa review rangkuman lagi sambil tunggu. ⏱"
         )
     else:
-        # Kirim soal berikutnya
         await send_next_question(context.bot, chat_id, state, ranger)
 
 # ── /skip ─────────────────────────────────────────────
