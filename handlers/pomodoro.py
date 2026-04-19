@@ -43,9 +43,14 @@ async def handle_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Reset session state sepenuhnya setiap /mulai
     init_session(chat_id)
+    print(f"DEBUG: Session reset untuk {ranger['name']} - chat_id: {chat_id}")
+    state = get_state(chat_id)
+    print(f"DEBUG: State setelah reset: questions={state['questions']}, keys={state['keys']}")
+
     state = get_state(chat_id)
     state["waiting_for_photo"] = True
     state["current_session"] = 1
+
 
     await update.message.reply_text(
         f"{ranger['emoji']} {ranger['ranger']} siap tempur!\n\n"
