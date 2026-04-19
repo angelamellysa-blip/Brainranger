@@ -4,8 +4,8 @@ import anthropic
 from prompts.smp import SMP_PROMPT
 from prompts.sd4 import SD4_PROMPT
 from prompts.sd1 import SD1_PROMPT
-
 from config import BRAINRANGER_AI_ANT_KEY
+
 client = anthropic.Anthropic(api_key=BRAINRANGER_AI_ANT_KEY)
 
 PROMPTS = {
@@ -41,12 +41,37 @@ def process_photos(photo_bytes_list, ranger):
 
     response = client.messages.create(
         model="claude-haiku-4-5",
-        max_tokens=4096,
+        max_tokens=8096,
         system=get_system_prompt(ranger["level"]),
         messages=[{"role": "user", "content": content}]
     )
 
     return parse_response(response.content[0].text)
+
+def evaluate_answer(soal, jawaban_anak, kunci_jawaban, level):
+    prompt = f"""Kamu adalah guru {level} Indonesia yang sedang mengoreksi jawaban siswa.
+
+Soal: {soal}
+Kunci jawaban: {kunci_jawaban}
+Jawaban siswa: {jawaban_anak}
+
+Apakah jawaban siswa BENAR secara makna dan konsep?
+Jawab hanya dengan satu kata: BENAR atau SALAH
+
+Pertimbangkan:
+- Jawaban dianggap BENAR jika maknanya sama meskipun berbeda kata
+- Jawaban dianggap BENAR jika konsepnya tepat meskipun tidak persis sama dengan kunci
+- Jawaban dianggap SALAH jika konsep atau faktanya keliru
+"""
+
+    response = client.messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=10,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    result = response.content[0].text.strip().upper()
+    return "BENAR" in result
 
 def parse_response(text):
     sections = {

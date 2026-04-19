@@ -1,10 +1,10 @@
-import os
 import asyncio
+import os
 from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 from config import get_ranger, PARENT_CHAT_ID
-from handlers.ai_processor import process_photos
+from handlers.ai_processor import process_photos, evaluate_answer
 from utils.message_splitter import split_message
 
 session_state = {}
@@ -20,11 +20,13 @@ def init_session(chat_id):
         "answers": [],
         "keys": [],
         "pembahasan": [],
+        "rangkuman": "",
         "points_today": 0,
         "topic": "",
         "all_sessions_done": False,
         "awaiting_answers": False,
         "current_question": 0,
+        "correct_count": 0,
     }
 
 def get_state(chat_id):
@@ -32,21 +34,17 @@ def get_state(chat_id):
         init_session(chat_id)
     return session_state[chat_id]
 
+# ── /mulai ────────────────────────────────────────────
 async def handle_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     ranger = get_ranger(chat_id)
     if not ranger:
         return
 
+    # Reset session state sepenuhnya setiap /mulai
+    init_session(chat_id)
     state = get_state(chat_id)
-    if state["active"]:
-        await update.message.reply_text(
-            f"{ranger['emoji']} Sesi sedang berjalan! Selesaikan dulu ya."
-        )
-        return
-
     state["waiting_for_photo"] = True
-    state["pending_photos"] = []
     state["current_session"] = 1
 
     await update.message.reply_text(
@@ -56,6 +54,7 @@ async def handle_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Kalau sudah semua, ketik /selesai"
     )
 
+# ── Handler foto ──────────────────────────────────────
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     ranger = get_ranger(chat_id)
@@ -76,6 +75,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Kirim foto berikutnya atau ketik /selesai kalau sudah semua."
     )
 
+# ── /selesai ──────────────────────────────────────────
 async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     ranger = get_ranger(chat_id)
@@ -107,12 +107,15 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Simpan ke state
     state["questions"] = result["soal"]
     state["keys"] = result["kunci"]
     state["pembahasan"] = result["pembahasan"]
+    state["rangkuman"] = result["rangkuman"]
     state["waiting_for_photo"] = False
     state["pending_photos"] = []
 
+    # ── SESI 1: Kirim rangkuman + audio ──────────────
     rangkuman = result["rangkuman"]
     chunks = split_message(f"📌 Rangkuman materi:\n\n{rangkuman}")
     for i, chunk in enumerate(chunks):
@@ -141,15 +144,7 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Audio podcast tidak tersedia, tapi rangkuman text sudah ada ya!"
         )
 
-    soal_text = "❓ Soal latihan:\n\n"
-    for i, soal in enumerate(result["soal"]):
-        soal_text += f"{i+1}. {soal}\n\n"
-    soal_text += "Jawab soal satu per satu ya! Ketik jawaban nomor 1 dulu."
-    await update.message.reply_text(soal_text)
-
-    state["awaiting_answers"] = True
-    state["current_question"] = 0
-    state["answers"] = []
+    # Start timer sesi 1
     state["active"] = True
     state["session_start"] = datetime.now()
 
@@ -158,13 +153,112 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
         when=ranger["focus_minutes"] * 60,
         chat_id=chat_id,
         name=f"session_{chat_id}",
-        data={"ranger": ranger, "session": state["current_session"]}
+        data={"ranger": ranger, "session": 1}
     )
 
     await update.message.reply_text(
-        f"⏱ Timer {ranger['focus_minutes']} menit dimulai! Fokus ya! 🔥"
+        f"⏱ Sesi 1 dimulai — {ranger['focus_minutes']} menit!\n\n"
+        f"Baca rangkuman & dengerin podcast dulu ya.\n"
+        f"Nanti setelah timer selesai, kamu akan ditest! 💪"
     )
 
+# ── Session end ───────────────────────────────────────
+async def session_end(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    chat_id = job.chat_id
+    ranger = job.data["ranger"]
+    session = job.data["session"]
+    state = get_state(chat_id)
+    state["active"] = False
+
+    if session == 1:
+        # Sesi 1 selesai → minta /lanjut untuk mulai test
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"{ranger['emoji']} Sesi 1 selesai! Semoga sudah paham materinya!\n\n"
+                f"Break {ranger['break_minutes']} menit dulu ya.\n\n"
+                f"Setelah siap, ketik /lanjut untuk mulai sesi test! 📝"
+            )
+        )
+    else:
+        # Sesi 2 selesai → recap lengkap
+        state["all_sessions_done"] = True
+        total_q = len(state["questions"])
+        correct = state["correct_count"]
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"{ranger['emoji']} MISI SELESAI, {ranger['name']}! ⚡\n\n"
+                f"Full 2 sesi completed!\n"
+                f"Soal benar: {correct}/{total_q}\n"
+                f"Power hari ini: +{state['points_today']} ⚡\n\n"
+                f"{ranger['ranger']} makin kuat! 🔥"
+            )
+        )
+        await context.bot.send_message(
+            chat_id=PARENT_CHAT_ID,
+            text=(
+                f"{ranger['emoji']} {ranger['name']} ({ranger['ranger']}) "
+                f"selesai belajar! ✅\n"
+                f"Soal benar: {correct}/{total_q}\n"
+                f"Power: +{state['points_today']} ⚡"
+            )
+        )
+
+# ── /lanjut → mulai sesi 2 (TEST) ────────────────────
+async def handle_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    ranger = get_ranger(chat_id)
+    if not ranger:
+        return
+
+    state = get_state(chat_id)
+    state["active"] = True
+    state["current_session"] = 2
+    state["awaiting_answers"] = True
+    state["current_question"] = 0
+    state["answers"] = []
+    state["correct_count"] = 0
+
+    await update.message.reply_text(
+        f"{ranger['emoji']} Sesi 2 dimulai — saatnya ditest! 📝\n\n"
+        f"Ada {len(state['questions'])} soal yang harus dijawab.\n"
+        f"Jawab satu per satu ya!\n\n"
+        f"⏱ Timer {ranger['focus_minutes']} menit dimulai!"
+    )
+
+    # Kirim soal pertama
+    await send_next_question(context.bot, chat_id, state, ranger)
+
+    # Start timer sesi 2
+    context.job_queue.run_once(
+        session_end,
+        when=ranger["focus_minutes"] * 60,
+        chat_id=chat_id,
+        name=f"session2_{chat_id}",
+        data={"ranger": ranger, "session": 2}
+    )
+
+# ── Kirim soal berikutnya ─────────────────────────────
+async def send_next_question(bot, chat_id, state, ranger):
+    current_q = state["current_question"]
+    total_q = len(state["questions"])
+
+    if current_q >= total_q:
+        return
+
+    soal = state["questions"][current_q]
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            f"❓ Soal {current_q + 1}/{total_q}\n\n"
+            f"{soal}"
+        )
+    )
+
+# ── Handler jawaban ───────────────────────────────────
 async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     ranger = get_ranger(chat_id)
@@ -184,17 +278,28 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     correct_answer = state["keys"][current_q]
     pembahasan = state["pembahasan"][current_q] if current_q < len(state["pembahasan"]) else ""
+    soal = state["questions"][current_q]
 
-    answer_lower = answer.lower()
-    correct_lower = correct_answer.lower()
-    is_correct = (
-        answer_lower == correct_lower or
-        answer_lower in correct_lower or
-        correct_lower in answer_lower
-    )
+    # Evaluasi jawaban via Claude — flexible matching
+    try:
+        is_correct = await asyncio.to_thread(
+            evaluate_answer,
+            soal,
+            answer,
+            correct_answer,
+            ranger["level"]
+        )
+    except Exception:
+        # Fallback ke string matching kalau Claude error
+        is_correct = (
+            answer.lower() == correct_answer.lower() or
+            answer.lower() in correct_answer.lower() or
+            correct_answer.lower() in answer.lower()
+        )
 
     if is_correct:
         state["points_today"] += 10
+        state["correct_count"] += 1
         result_text = f"✅ RANGER STRIKE! Jawaban tepat sasaran!\n\n"
     else:
         state["points_today"] += 2
@@ -205,98 +310,21 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state["current_question"] += 1
 
+    # Cek apakah semua soal sudah dijawab
     if state["current_question"] >= len(state["questions"]):
         state["awaiting_answers"] = False
-        correct_count = sum(
-            1 for i, ans in enumerate(state["answers"])
-            if i < len(state["keys"]) and (
-                ans.lower() == state["keys"][i].lower() or
-                ans.lower() in state["keys"][i].lower() or
-                state["keys"][i].lower() in ans.lower()
-            )
-        )
-        await update.message.reply_text(
-            f"{ranger['emoji']} Semua soal selesai!\n\n"
-            f"Skor: {correct_count}/{len(state['questions'])} benar\n"
-            f"Lanjut fokus belajar ya! Timer masih jalan ⏱"
-        )
-    else:
-        await update.message.reply_text(
-            f"Lanjut soal {state['current_question'] + 1} ya!"
-        )
-
-async def session_end(context: ContextTypes.DEFAULT_TYPE):
-    job = context.job
-    chat_id = job.chat_id
-    ranger = job.data["ranger"]
-    session = job.data["session"]
-    state = get_state(chat_id)
-    state["active"] = False
-
-    if session == 1:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=(
-                f"{ranger['emoji']} Sesi 1 selesai! Keren!\n\n"
-                f"Break {ranger['break_minutes']} menit dulu ya.\n"
-                f"Kalau sudah siap, ketik /lanjut"
-            )
-        )
-    else:
-        state["all_sessions_done"] = True
-        correct_count = sum(
-            1 for i, ans in enumerate(state["answers"])
-            if i < len(state["keys"]) and (
-                ans.lower() == state["keys"][i].lower() or
-                ans.lower() in state["keys"][i].lower() or
-                state["keys"][i].lower() in ans.lower()
-            )
-        )
+        correct = state["correct_count"]
         total_q = len(state["questions"])
-
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=(
-                f"{ranger['emoji']} MISI SELESAI, {ranger['name']}! ⚡\n\n"
-                f"Full 2 sesi completed!\n"
-                f"Soal benar: {correct_count}/{total_q}\n"
-                f"Power hari ini: +{state['points_today']} ⚡\n\n"
-                f"{ranger['ranger']} makin kuat! 🔥"
-            )
+        await update.message.reply_text(
+            f"{ranger['emoji']} Semua soal selesai sebelum timer!\n\n"
+            f"Skor: {correct}/{total_q} benar\n"
+            f"Timer masih jalan — bisa review rangkuman lagi sambil tunggu. ⏱"
         )
-        await context.bot.send_message(
-            chat_id=PARENT_CHAT_ID,
-            text=(
-                f"{ranger['emoji']} {ranger['name']} ({ranger['ranger']}) "
-                f"selesai belajar! ✅\n"
-                f"Soal benar: {correct_count}/{total_q}\n"
-                f"Power: +{state['points_today']} ⚡"
-            )
-        )
+    else:
+        # Kirim soal berikutnya
+        await send_next_question(context.bot, chat_id, state, ranger)
 
-async def handle_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    ranger = get_ranger(chat_id)
-    if not ranger:
-        return
-
-    state = get_state(chat_id)
-    state["active"] = True
-    state["current_session"] = 2
-
-    await update.message.reply_text(
-        f"{ranger['emoji']} Sesi 2 dimulai!\n"
-        f"{ranger['focus_minutes']} menit lagi — gas pol! 🔥"
-    )
-
-    context.job_queue.run_once(
-        session_end,
-        when=ranger["focus_minutes"] * 60,
-        chat_id=chat_id,
-        name=f"session2_{chat_id}",
-        data={"ranger": ranger, "session": 2}
-    )
-
+# ── /skip ─────────────────────────────────────────────
 async def handle_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     ranger = get_ranger(chat_id)
