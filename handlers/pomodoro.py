@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import os
 from datetime import datetime
 from telegram import Update
@@ -7,6 +8,7 @@ from config import get_ranger, PARENT_CHAT_ID
 from handlers.ai_processor import process_photos, evaluate_answer
 from utils.message_splitter import split_message
 from utils.state_manager import load_all_states, save_all_states
+from utils.points import add_points
 
 session_state = load_all_states()
 
@@ -69,7 +71,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     photo = await update.message.photo[-1].get_file()
     photo_bytes = await photo.download_as_bytearray()
-    state["pending_photos"].append(bytes(photo_bytes))
+    state["pending_photos"].append(base64.b64encode(bytes(photo_bytes)).decode("utf-8"))
 
     count = len(state["pending_photos"])
     await update.message.reply_text(
@@ -111,8 +113,10 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"BrainRanger lagi activate power-mu... tunggu sebentar! ⚡"
     )
 
+    photos_bytes = [base64.b64decode(p) if isinstance(p, str) else p for p in photos]
+
     try:
-        result = await asyncio.to_thread(process_photos, photos, ranger)
+        result = await asyncio.to_thread(process_photos, photos_bytes, ranger)
     except Exception as e:
         await update.message.reply_text(
             f"Waduh ada error saat proses foto: {str(e)}\n"
@@ -338,9 +342,11 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_correct:
         state["points_today"] += 10
         state["correct_count"] += 1
+        add_points(chat_id, 10)
         result_text = f"✅ RANGER STRIKE! Jawaban tepat sasaran!\n\n"
     else:
         state["points_today"] += 2
+        add_points(chat_id, 2)
         result_text = f"❌ Belum tepat, tapi tetap semangat!\nJawaban: {correct_answer}\n\n"
 
     result_text += f"📖 Pembahasan:\n{pembahasan}"
@@ -352,13 +358,30 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Cek apakah semua soal sudah dijawab
     if state["current_question"] >= len(state["questions"]):
         state["awaiting_answers"] = False
+        state["all_sessions_done"] = True
         correct = state["correct_count"]
         total_q = len(state["questions"])
         save_all_states(session_state)
+
+        # Cancel timer sesi 2 agar tidak double notif
+        for job in context.job_queue.get_jobs_by_name(f"session2_{chat_id}"):
+            job.schedule_removal()
+
         await update.message.reply_text(
-            f"{ranger['emoji']} Semua soal selesai sebelum timer!\n\n"
-            f"Skor: {correct}/{total_q} benar\n"
-            f"Timer masih jalan — bisa review rangkuman lagi sambil tunggu. ⏱"
+            f"{ranger['emoji']} MISI SELESAI, {ranger['name']}! ⚡\n\n"
+            f"Full 2 sesi completed!\n"
+            f"Soal benar: {correct}/{total_q}\n"
+            f"Power hari ini: +{state['points_today']} ⚡\n\n"
+            f"{ranger['ranger']} makin kuat! 🔥"
+        )
+        await context.bot.send_message(
+            chat_id=PARENT_CHAT_ID,
+            text=(
+                f"{ranger['emoji']} {ranger['name']} ({ranger['ranger']}) "
+                f"selesai belajar! ✅\n"
+                f"Soal benar: {correct}/{total_q}\n"
+                f"Power: +{state['points_today']} ⚡"
+            )
         )
     else:
         await send_next_question(context.bot, chat_id, state, ranger)

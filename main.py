@@ -2,7 +2,8 @@ import logging
 import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from config import TELEGRAM_BOT_TOKEN, PARENT_CHAT_ID, REMINDER_HOUR, REMINDER_MINUTE, get_ranger, is_ranger, is_parent
+from config import TELEGRAM_BOT_TOKEN, PARENT_CHAT_ID, REMINDER_HOUR, REMINDER_MINUTE, DIGEST_HOUR, DIGEST_MINUTE, get_ranger, is_ranger, is_parent
+from utils.points import get_today_points, get_total_points, get_all_today
 from handlers.pomodoro import (
     handle_mulai, handle_photo, handle_selesai,
     handle_lanjut, handle_skip, handle_answer,
@@ -56,11 +57,12 @@ async def power(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ranger = get_ranger(chat_id)
     if not ranger:
         return
-    state = get_state(chat_id)
+    today = get_today_points(chat_id)
+    total = get_total_points(chat_id)
     await update.message.reply_text(
         f"{ranger['emoji']} Power Points {ranger['name']}\n\n"
-        f"Poin hari ini: {state['points_today']}\n"
-        f"(Fitur lengkap coming soon!)"
+        f"Poin hari ini: {today} ⚡\n"
+        f"Total semua waktu: {total} ⚡"
     )
 
 async def send_reminders(context: ContextTypes.DEFAULT_TYPE):
@@ -83,6 +85,19 @@ async def send_reminders(context: ContextTypes.DEFAULT_TYPE):
         chat_id=PARENT_CHAT_ID,
         text="🔔 Reminder belajar sudah dikirim ke semua Ranger!"
     )
+
+async def send_digest(context: ContextTypes.DEFAULT_TYPE):
+    from config import RANGERS
+    today_points = get_all_today()
+    msg = "📊 Digest Belajar Hari Ini\n\n"
+    for cid, r in RANGERS.items():
+        if cid == 0:
+            continue
+        state = get_state(cid)
+        pts = today_points.get(cid, 0)
+        done = "✅ selesai" if state.get("all_sessions_done") else "⏳ belum selesai"
+        msg += f"{r['emoji']} {r['name']}: {done} — {pts} poin ⚡\n"
+    await context.bot.send_message(chat_id=PARENT_CHAT_ID, text=msg)
 
 async def test_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_parent(update.effective_chat.id):
@@ -118,6 +133,16 @@ def main():
             tzinfo=datetime.timezone(datetime.timedelta(hours=7))
         ),
         name="daily_reminder"
+    )
+
+    app.job_queue.run_daily(
+        send_digest,
+        time=datetime.time(
+            hour=DIGEST_HOUR,
+            minute=DIGEST_MINUTE,
+            tzinfo=datetime.timezone(datetime.timedelta(hours=7))
+        ),
+        name="daily_digest"
     )
 
     print("BrainRanger bot is running!")
