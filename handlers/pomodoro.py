@@ -9,6 +9,7 @@ from handlers.ai_processor import process_photos, evaluate_answer
 from utils.message_splitter import split_message
 from utils.state_manager import load_all_states, save_all_states
 from utils.points import add_points
+from handlers.sheets import log_session
 
 session_state = load_all_states()
 
@@ -220,6 +221,10 @@ async def session_end(context: ContextTypes.DEFAULT_TYPE):
         correct = state["correct_count"]
         save_all_states(session_state)
 
+        # Log ke Google Sheets (hanya jika belum di-log dari handle_answer)
+        if not state.get("session_logged"):
+            await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"])
+
         await context.bot.send_message(
             chat_id=chat_id,
             text=(
@@ -367,6 +372,13 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for job in context.job_queue.get_jobs_by_name(f"session2_{chat_id}"):
             job.schedule_removal()
 
+<<<<<<< HEAD
+=======
+        # Log ke Google Sheets
+        state["session_logged"] = True
+        await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"])
+
+>>>>>>> 04f1258 (feat: Google Sheets session logging)
         await update.message.reply_text(
             f"{ranger['emoji']} MISI SELESAI, {ranger['name']}! ⚡\n\n"
             f"Full 2 sesi completed!\n"

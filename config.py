@@ -46,6 +46,9 @@ RANGERS = {
     },
 }
 
+# ── Google Sheets ─────────────────────────────────────
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "")
+
 # ── Schedule ──────────────────────────────────────────
 REMINDER_HOUR   = int(os.getenv("REMINDER_HOUR", "19"))
 REMINDER_MINUTE = int(os.getenv("REMINDER_MINUTE", "0"))
