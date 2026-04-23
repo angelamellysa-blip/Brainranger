@@ -372,13 +372,10 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for job in context.job_queue.get_jobs_by_name(f"session2_{chat_id}"):
             job.schedule_removal()
 
-<<<<<<< HEAD
-=======
         # Log ke Google Sheets
         state["session_logged"] = True
         await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"])
 
->>>>>>> 04f1258 (feat: Google Sheets session logging)
         await update.message.reply_text(
             f"{ranger['emoji']} MISI SELESAI, {ranger['name']}! ⚡\n\n"
             f"Full 2 sesi completed!\n"
