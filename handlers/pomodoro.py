@@ -10,6 +10,7 @@ from utils.message_splitter import split_message, to_html, strip_markdown
 from utils.state_manager import load_all_states, save_all_states
 from utils.points import add_points
 from handlers.sheets import log_session
+from handlers.svg_generator import needs_illustration, generate_svg, svg_to_png
 
 session_state = load_all_states()
 
@@ -300,13 +301,26 @@ async def send_next_question(bot, chat_id, state, ranger):
         return
 
     soal = state["questions"][current_q]
-    await bot.send_message(
-        chat_id=chat_id,
-        text=(
-            f"❓ Soal {current_q + 1}/{total_q}\n\n"
-            f"{soal}"
-        )
-    )
+    caption = f"❓ Soal {current_q + 1}/{total_q}\n\n{soal}"
+
+    # Coba generate ilustrasi SVG kalau soal butuh gambar
+    if needs_illustration(soal):
+        try:
+            svg = await asyncio.to_thread(generate_svg, soal, ranger["level"])
+            if svg:
+                png = await asyncio.to_thread(svg_to_png, svg)
+                if png:
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=png,
+                        caption=caption
+                    )
+                    return
+        except Exception as e:
+            print(f"Ilustrasi gagal, fallback ke teks: {e}")
+
+    # Fallback: kirim sebagai teks biasa
+    await bot.send_message(chat_id=chat_id, text=caption)
 
 # ── Handler jawaban ───────────────────────────────────
 async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
