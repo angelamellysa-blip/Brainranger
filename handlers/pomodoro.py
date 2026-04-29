@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from config import get_ranger, PARENT_CHAT_ID
 from handlers.ai_processor import process_photos, evaluate_answer
-from utils.message_splitter import split_message
+from utils.message_splitter import split_message, to_html, strip_markdown
 from utils.state_manager import load_all_states, save_all_states
 from utils.points import add_points
 from handlers.sheets import log_session
@@ -150,17 +150,19 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── SESI 1: Kirim rangkuman + audio ──────────────
     rangkuman = result["rangkuman"]
-    chunks = split_message(f"📌 Rangkuman materi:\n\n{rangkuman}")
+    rangkuman_html = to_html(rangkuman)
+    chunks = split_message(f"📌 Rangkuman materi:\n\n{rangkuman_html}")
     for i, chunk in enumerate(chunks):
         prefix = f"(Rangkuman {i+1}/{len(chunks)})\n" if len(chunks) > 1 else ""
-        await update.message.reply_text(prefix + chunk)
+        await update.message.reply_text(prefix + chunk, parse_mode="HTML")
 
-    # Generate & kirim podcast audio
+    # Generate & kirim podcast audio (tanpa markdown)
+    rangkuman_tts = strip_markdown(rangkuman)
     try:
         from handlers.tts import generate_podcast
         podcast_path = await asyncio.to_thread(
             generate_podcast,
-            rangkuman,
+            rangkuman_tts,
             ranger["name"],
             ranger["level"]
         )
