@@ -27,6 +27,7 @@ JANGAN ringkas atau potong informasi apapun dari buku.
 Buat 10 soal yang sangat mudah sesuai level kelas 1.
 Gunakan kalimat pendek. Boleh berupa soal isian, pilihan, atau ya/tidak.
 HANYA buat soal dari materi yang ada di foto.
+LARANGAN: JANGAN cantumkan jawaban atau hint penyelesaian di dalam teks soal.
 1. [soal 1]
 2. [soal 2]
 3. [soal 3]

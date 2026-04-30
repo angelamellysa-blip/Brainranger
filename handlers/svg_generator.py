@@ -31,11 +31,18 @@ ATURAN OUTPUT:
 ATURAN GAMBAR:
 - Gaya teknis seperti di buku pelajaran, bersih dan jelas
 - Warna cerah tapi tidak mencolok (pakai #AED6F1, #A9DFBF, #FAD7A0, dll)
-- Label titik (A, B, C) dan ukuran wajib dicantumkan jika ada di soal
+- Label titik (A, B, C) dan ukuran yang DIKETAHUI boleh dicantumkan
 - Bangun ruang: gunakan proyeksi isometrik
 - Garis tersembunyi: stroke-dasharray="4"
 - Sumbu koordinat: sertakan label x dan y
 - Semua teks menggunakan font-size minimal 11
+
+LARANGAN KERAS:
+- JANGAN tulis rumus penyelesaian (contoh: V = p×l×t)
+- JANGAN tulis jawaban atau hasil perhitungan
+- JANGAN tulis hint atau cara penyelesaian
+- JANGAN cantumkan nilai yang DITANYAKAN (yang dicari)
+- Ilustrasi hanya menggambarkan bentuk + ukuran yang DIKETAHUI saja
 """
 
 def needs_illustration(question: str) -> bool:

@@ -29,6 +29,7 @@ Buat 10 soal yang mencakup SEMUA aspek materi di foto.
 Variasikan tipe soal: pemahaman konsep, aplikasi rumus, analisis, dan penalaran.
 Tingkat kesulitan bervariasi dari mudah ke sulit.
 HANYA buat soal dari materi yang ada di foto.
+LARANGAN: JANGAN cantumkan jawaban, angka hasil, atau hint penyelesaian di dalam teks soal.
 1. [soal 1]
 2. [soal 2]
 3. [soal 3]
