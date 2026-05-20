@@ -52,7 +52,7 @@ def needs_illustration(question: str) -> bool:
 def generate_svg(question: str, level: str) -> str | None:
     try:
         response = client.messages.create(
-            model="claude-haiku-4-5",
+            model="claude-sonnet-4-6",
             max_tokens=2000,
             system=SVG_SYSTEM_PROMPT,
             messages=[{

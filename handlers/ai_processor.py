@@ -40,7 +40,7 @@ def process_photos(photo_bytes_list, ranger):
     })
 
     response = client.messages.create(
-        model="claude-haiku-4-5",
+        model="claude-sonnet-4-6",
         max_tokens=8096,
         system=get_system_prompt(ranger["level"]),
         messages=[{"role": "user", "content": content}]
@@ -70,7 +70,7 @@ Pertimbangkan:
 """
 
     response = client.messages.create(
-        model="claude-haiku-4-5",
+        model="claude-sonnet-4-6",
         max_tokens=10,
         messages=[{"role": "user", "content": prompt}]
     )
