@@ -16,7 +16,9 @@ session_state = load_all_states()
 
 # Isi dengan sticker file_id dari Telegram.
 # Cara dapat file_id: kirim sticker ke bot → lihat log "Sticker file_id: ..."
-CELEBRATION_STICKERS = []
+CELEBRATION_STICKERS = [
+    "CAACAgIAAxkBAAIE42oO3LQ2LbxMgybRC0Ut6vQ2XhlkAAJiAQACIjeOBFTDGCohfmzkOwQ",
+]
 
 def init_session(chat_id):
     session_state[chat_id] = {
