@@ -65,6 +65,7 @@ async def handle_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["waiting_for_photo"] = True
     state["current_session"] = 1
     state["points_at_start"] = get_total_points(chat_id)
+    state["session_start"] = str(__import__("datetime").datetime.now())
     save_all_states(session_state)
 
     streak, _ = get_streak(chat_id)
@@ -353,9 +354,9 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result_text += f"📖 Pembahasan:\n{pembahasan}"
     await update.message.reply_text(result_text)
 
-    # Update bank soal jika mode latihan/ulang
+    # Update bank soal jika mode latihan/ulang/ujian
     # BENAR=True (keluar dari /ulang), SEBAGIAN/SALAH=False (tetap muncul di /ulang)
-    if state.get("mode") in ("latihan", "ulang"):
+    if state.get("mode") in ("latihan", "ulang", "ujian"):
         soal_ids = state.get("latihan_soal_ids", [])
         if current_q < len(soal_ids):
             await asyncio.to_thread(update_result, chat_id, soal_ids[current_q], verdict == "BENAR")
@@ -365,25 +366,10 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if state["current_question"] >= len(state["questions"]):
         state["awaiting_answers"] = False
-        state["all_sessions_done"] = True
         correct = state["correct_count"]
         total_q = len(state["questions"])
+        mode    = state.get("mode", "normal")
         save_all_states(session_state)
-
-        state["session_logged"] = True
-        streak, longest_streak = update_streak(chat_id)
-        topik = state.get("topic", "")
-
-        # Simpan soal ke bank soal
-        await asyncio.to_thread(
-            save_session,
-            chat_id, topik,
-            state["questions"], state["keys"], state["pembahasan"]
-        )
-
-        await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"], streak, longest_streak, topik)
-
-        mode = state.get("mode", "normal")
 
         if mode == "ujian":
             # Simpan hasil mapel ini
@@ -416,7 +402,7 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif mode in ("latihan", "ulang"):
-            # Selesai latihan/ulang — tidak notif Angela, tidak log sheets
+            # Selesai latihan/ulang — tidak notif Angela, tidak log sheets, tidak update streak
             label = "LATIHAN" if mode == "latihan" else "ULANG SOAL"
             await update.message.reply_text(
                 f"🎯 {label} SELESAI!\n\n"
@@ -426,7 +412,21 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             await send_celebration(context.bot, chat_id)
         else:
-            # Sesi normal
+            # Sesi normal — set done, update streak, simpan ke bank & sheets
+            state["all_sessions_done"] = True
+            streak, longest_streak = update_streak(chat_id)
+            topik = state.get("topic", "")
+
+            await asyncio.to_thread(
+                save_session,
+                chat_id, topik,
+                state["questions"], state["keys"], state["pembahasan"]
+            )
+            await asyncio.to_thread(
+                log_session, ranger, correct, total_q,
+                state["points_today"], streak, longest_streak, topik
+            )
+
             new_total = get_total_points(chat_id)
             old_total = state.get("points_at_start", 0)
             old_rank  = get_rank(old_total)
@@ -504,7 +504,6 @@ async def handle_ujian(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["ujian_current_mapel"] = ""
     save_all_states(session_state)
 
-    total_mapel = len(mapel_list)
     msg = (
         f"📝 Mode Ujian — {ranger['name']}\n"
         f"Setiap mapel: {count} soal\n\n"
@@ -651,6 +650,11 @@ async def handle_ulang(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Batasi jumlah soal ulang sesuai level
+    limit = UJIAN_SOAL_COUNT.get(ranger["level"], 10)
+    total_salah = len(salah_list)
+    salah_list  = salah_list[:limit]
+
     state = get_state(chat_id)
     state["mode"] = "ulang"
     state["awaiting_answers"] = True
@@ -658,15 +662,16 @@ async def handle_ulang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["current_question"] = 0
     state["correct_count"] = 0
     state["points_today"] = 0
-    state["questions"]  = [s["soal"]      for s in salah_list]
-    state["keys"]       = [s["kunci"]     for s in salah_list]
+    state["questions"]  = [s["soal"]       for s in salah_list]
+    state["keys"]       = [s["kunci"]      for s in salah_list]
     state["pembahasan"] = [s["pembahasan"] for s in salah_list]
-    state["latihan_soal_ids"] = [s["id"]  for s in salah_list]
+    state["latihan_soal_ids"] = [s["id"]   for s in salah_list]
     save_all_states(session_state)
 
+    sisa_msg = f" ({total_salah - limit} soal salah lainnya bisa diulang berikutnya)" if total_salah > limit else ""
     await update.message.reply_text(
         f"🔄 Mengulang soal yang salah — {ranger['name']}\n\n"
-        f"Ada {len(salah_list)} soal yang perlu diulang.\n"
+        f"Ada {len(salah_list)} soal yang perlu diulang.{sisa_msg}\n"
         f"Jawab satu per satu ya!"
     )
     await send_next_question(context.bot, chat_id, state, ranger)

@@ -121,15 +121,32 @@ async def squad(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def power(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    ranger = get_ranger(chat_id)
+    ranger  = get_ranger(chat_id)
     if not ranger:
         return
-    today = get_today_points(chat_id)
-    total = get_total_points(chat_id)
+    today  = get_today_points(chat_id)
+    total  = get_total_points(chat_id)
+    streak, _ = get_streak(chat_id)
+    rank_emoji, rank_name = get_rank(total)
+
+    # Progress ke rank berikutnya
+    RANK_THRESHOLDS = [101, 301, 601, 1000]
+    next_threshold  = next((t for t in RANK_THRESHOLDS if t > total), None)
+    if next_threshold:
+        progress_msg = f"Menuju rank berikutnya: {next_threshold - total} ⚡ lagi"
+    else:
+        progress_msg = "Kamu sudah di rank tertinggi! 👑"
+
+    streak_str = f"{streak} hari 🔥" if streak >= 3 else f"{streak} hari"
+
     await update.message.reply_text(
-        f"{ranger['emoji']} Power Points {ranger['name']}\n\n"
-        f"Poin hari ini: {today} ⚡\n"
-        f"Total semua waktu: {total} ⚡"
+        f"{ranger['emoji']} Power Report — {ranger['name']}\n"
+        f"━━━━━━━━━━━━━━━\n\n"
+        f"⚡ Hari ini    : +{today}\n"
+        f"⚡ Total power : {total}\n\n"
+        f"{rank_emoji} Rank   : {rank_name}\n"
+        f"🔥 Streak  : {streak_str}\n\n"
+        f"📈 {progress_msg}"
     )
 
 async def check_inactive_rangers(context: ContextTypes.DEFAULT_TYPE):
