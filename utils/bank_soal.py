@@ -69,6 +69,13 @@ def get_mapel_list(chat_id):
         result[m] = result.get(m, 0) + 1
     return result  # {"Matematika": 15, "IPA": 8, ...}
 
+# ── Jumlah soal ujian per level ───────────────────────
+UJIAN_SOAL_COUNT = {
+    "SD Kelas 1": 10,
+    "SD Kelas 4": 15,
+    "SMP":        20,
+}
+
 # ── Ambil soal random untuk /latihan ─────────────────
 def get_random_soal(chat_id, mapel=None, count=10):
     data = _load()

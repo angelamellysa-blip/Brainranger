@@ -9,7 +9,7 @@ from utils.bank_soal import get_weak_topics
 from handlers.pomodoro import (
     handle_mulai, handle_photo, handle_selesai,
     handle_lanjut, handle_skip, handle_answer,
-    handle_latihan, handle_ulang,
+    handle_latihan, handle_ulang, handle_ujian,
     handle_sticker, get_state, init_session
 )
 
@@ -67,7 +67,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/skip — Skip belajar hari ini\n\n"
             "🎯 LATIHAN SOAL\n"
             "/latihan — Latihan soal dari bank soal (pilih mapel)\n"
-            "/ulang — Ulangi soal yang pernah dijawab salah\n\n"
+            "/ulang — Ulangi soal yang pernah dijawab salah\n"
+            "/ujian — Simulasi ujian per mapel (soal lebih banyak)\n\n"
             "⚡ POWER & RANK\n"
             "/power — Lihat poin hari ini dan total power\n\n"
             "🛠 LAINNYA\n"
@@ -227,6 +228,7 @@ def main():
     app.add_handler(CommandHandler("skip",          handle_skip))
     app.add_handler(CommandHandler("latihan",       handle_latihan))
     app.add_handler(CommandHandler("ulang",         handle_ulang))
+    app.add_handler(CommandHandler("ujian",         handle_ujian))
     app.add_handler(CommandHandler("testreminder",  test_reminder))
     app.add_handler(MessageHandler(filters.PHOTO,       handle_photo))
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
