@@ -8,7 +8,7 @@ from config import get_ranger, PARENT_CHAT_ID
 from handlers.ai_processor import process_photos, evaluate_answer
 from utils.message_splitter import split_message, to_html, strip_markdown
 from utils.state_manager import load_all_states, save_all_states
-from utils.points import add_points
+from utils.points import add_points, update_streak
 from handlers.sheets import log_session
 from handlers.svg_generator import needs_illustration, generate_svg, generate_illustration, svg_to_png
 
@@ -322,7 +322,8 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_all_states(session_state)
 
         state["session_logged"] = True
-        await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"])
+        streak, longest_streak = update_streak(chat_id)
+        await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"], streak, longest_streak)
 
         await update.message.reply_text(
             f"{ranger['emoji']} MISI SELESAI, {ranger['name']}! ⚡\n\n"

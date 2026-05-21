@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -86,6 +87,24 @@ async def send_reminders(context: ContextTypes.DEFAULT_TYPE):
         text="🔔 Reminder belajar sudah dikirim ke semua Ranger!"
     )
 
+async def send_weekly_summary(context: ContextTypes.DEFAULT_TYPE):
+    if datetime.datetime.now().weekday() != 4:  # 4 = Jumat
+        return
+    from handlers.sheets import get_weekly_summary
+    summary = await asyncio.to_thread(get_weekly_summary)
+    if not summary:
+        return
+
+    msg = f"📊 Rekap Mingguan BrainRanger\n\n"
+    for name, data in summary.items():
+        avg = round(data["benar"] / data["total"] * 100, 1) if data["total"] > 0 else 0
+        msg += (
+            f"👤 {name}\n"
+            f"   Sesi: {data['sesi']} | Poin: {data['poin']} ⚡\n"
+            f"   Rata-rata benar: {avg}%\n\n"
+        )
+    await context.bot.send_message(chat_id=PARENT_CHAT_ID, text=msg)
+
 async def send_digest(context: ContextTypes.DEFAULT_TYPE):
     from config import RANGERS
     today_points = get_all_today()
@@ -144,6 +163,16 @@ def main():
             tzinfo=datetime.timezone(datetime.timedelta(hours=7))
         ),
         name="daily_digest"
+    )
+
+    app.job_queue.run_daily(
+        send_weekly_summary,
+        time=datetime.time(
+            hour=21,
+            minute=30,
+            tzinfo=datetime.timezone(datetime.timedelta(hours=7))
+        ),
+        name="weekly_summary"
     )
 
     print("BrainRanger bot is running!")
