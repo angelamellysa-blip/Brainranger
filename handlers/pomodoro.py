@@ -357,7 +357,7 @@ async def send_celebration(bot, chat_id):
 # ── Capture sticker file_id (untuk setup CELEBRATION_STICKERS) ──
 async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sticker = update.message.sticker
-    print(f"Sticker file_id: {sticker.file_id} | animated: {sticker.is_animated} | emoji: {sticker.emoji}")
+    await update.message.reply_text(f"file_id: `{sticker.file_id}`", parse_mode="Markdown")
 
 # ── /skip ─────────────────────────────────────────────
 async def handle_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
