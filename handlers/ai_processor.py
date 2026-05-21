@@ -65,34 +65,19 @@ def evaluate_answer(soal, jawaban_anak, kunci_jawaban, level):
     verdict : "BENAR" | "SEBAGIAN" | "SALAH"
     catatan : string penjelasan singkat (hanya untuk SEBAGIAN)
     """
-    prompt = f"""Kamu adalah guru {level} Indonesia yang mengoreksi jawaban siswa.
-
+    prompt = f"""Nilai jawaban siswa {level}.
 Soal: {soal}
-Kunci jawaban: {kunci_jawaban}
-Jawaban siswa: {jawaban_anak}
+Kunci: {kunci_jawaban}
+Jawaban: {jawaban_anak}
 
-Nilai jawaban siswa dengan salah satu dari 3 pilihan:
+BENAR = makna/konsep sama meski kata beda, format beda tapi benar, inti tepat
+SEBAGIAN = konsep utama benar tapi kurang lengkap atau ada bagian salah
+SALAH = konsep keliru atau tidak nyambung
 
-BENAR — jika:
-- Makna atau konsep sama meski kata berbeda
-- Singkatan/simbol/format berbeda tapi benar
-- Nilai numerik benar meski satuan ditulis beda
-- Jawaban tidak lengkap tapi inti konsep tepat
-
-SEBAGIAN — jika:
-- Konsep utama benar tapi ada bagian yang kurang atau salah
-- Jawaban benar tapi penjelasan tidak lengkap
-- Ada kesalahan kecil tapi ide pokoknya tepat
-
-SALAH — jika:
-- Konsep atau fakta memang keliru
-- Jawaban tidak nyambung dengan soal
-
-Format jawaban (WAJIB ikuti persis):
-Jika BENAR  → tulis: BENAR
-Jika SEBAGIAN → tulis: SEBAGIAN | [max 8 kata yang kurang]
-Jika SALAH  → tulis: SALAH
-"""
+Balas HANYA salah satu:
+BENAR
+SEBAGIAN | [max 8 kata yang kurang]
+SALAH"""
 
     response = client.messages.create(
         model="claude-haiku-4-5",

@@ -201,36 +201,47 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prefix = f"(Rangkuman {i+1}/{len(chunks)})\n" if len(chunks) > 1 else ""
         await update.message.reply_text(prefix + chunk, parse_mode="HTML")
 
-    # ── Ilustrasi untuk rangkuman jika materi visual ──
-    if needs_illustration(rangkuman):
+    # ── Generate SVG + Podcast secara paralel ────────
+    from handlers.tts import generate_podcast
+    rangkuman_tts = strip_markdown(rangkuman)
+
+    async def _gen_svg():
+        if not needs_illustration(rangkuman):
+            return None
         try:
             svg = await asyncio.to_thread(generate_illustration, rangkuman[:400], ranger["level"])
             if svg:
-                png = await asyncio.to_thread(svg_to_png, svg)
-                if png:
-                    await update.message.reply_photo(photo=png, caption="📐 Ilustrasi materi")
+                return await asyncio.to_thread(svg_to_png, svg)
         except Exception as e:
             print(f"Ilustrasi rangkuman gagal: {e}")
+        return None
 
-    # ── Generate & kirim podcast audio ───────────────
-    rangkuman_tts = strip_markdown(rangkuman)
-    try:
-        from handlers.tts import generate_podcast
-        podcast_path = await asyncio.to_thread(
-            generate_podcast,
-            rangkuman_tts,
-            ranger["name"],
-            ranger["level"]
-        )
-        with open(podcast_path, "rb") as audio:
-            await update.message.reply_audio(
-                audio=audio,
-                title=f"Podcast Materi - {ranger['name']}",
-                caption="Dengerin sambil belajar ya! 🎧",
+    async def _gen_audio():
+        try:
+            return await asyncio.to_thread(
+                generate_podcast, rangkuman_tts, ranger["name"], ranger["level"]
             )
-        os.remove(podcast_path)
-    except Exception as e:
-        print(f"TTS error: {e}")
+        except Exception as e:
+            print(f"TTS error: {e}")
+        return None
+
+    png, podcast_path = await asyncio.gather(_gen_svg(), _gen_audio())
+
+    if png:
+        await update.message.reply_photo(photo=png, caption="📐 Ilustrasi materi")
+
+    if podcast_path:
+        try:
+            with open(podcast_path, "rb") as audio:
+                await update.message.reply_audio(
+                    audio=audio,
+                    title=f"Podcast Materi - {ranger['name']}",
+                    caption="Dengerin sambil belajar ya! 🎧",
+                )
+            os.remove(podcast_path)
+        except Exception as e:
+            print(f"Audio send error: {e}")
+    else:
         await update.message.reply_text(
             "Audio podcast tidak tersedia, tapi rangkuman text sudah ada ya!"
         )
@@ -450,10 +461,10 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id, topik,
                 state["questions"], state["keys"], state["pembahasan"]
             )
-            await asyncio.to_thread(
+            asyncio.create_task(asyncio.to_thread(
                 log_session, ranger, correct, total_q,
                 state["points_today"], streak, longest_streak, topik
-            )
+            ))
 
             new_total = get_total_points(chat_id)
             old_total = state.get("points_at_start", 0)
@@ -834,5 +845,5 @@ async def handle_skip_reason(update: Update, context: ContextTypes.DEFAULT_TYPE,
         )
     )
 
-    # Simpan ke Sheets
-    await asyncio.to_thread(log_skip, ranger, reason)
+    # Simpan ke Sheets (fire-and-forget)
+    asyncio.create_task(asyncio.to_thread(log_skip, ranger, reason))

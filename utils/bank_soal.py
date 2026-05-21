@@ -6,16 +6,25 @@ from datetime import date
 
 BANK_FILE = "bank_soal.json"
 
+_cache: dict | None = None  # in-memory cache, None = belum di-load
+
 def _load():
+    global _cache
+    if _cache is not None:
+        return _cache
     if os.path.exists(BANK_FILE):
         try:
             with open(BANK_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                _cache = json.load(f)
+                return _cache
         except Exception:
-            return {}
-    return {}
+            pass
+    _cache = {}
+    return _cache
 
 def _save(data):
+    global _cache
+    _cache = data  # update cache sebelum tulis disk
     try:
         with open(BANK_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)

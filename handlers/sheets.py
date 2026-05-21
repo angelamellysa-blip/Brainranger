@@ -10,7 +10,12 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
+_sheets_client = None  # cached client
+
 def get_sheets_client():
+    global _sheets_client
+    if _sheets_client is not None:
+        return _sheets_client
     creds_b64 = os.getenv("GOOGLE_CREDENTIALS_BASE64")
     if creds_b64:
         creds_json = json.loads(base64.b64decode(creds_b64).decode("utf-8"))
@@ -21,7 +26,8 @@ def get_sheets_client():
         credentials = service_account.Credentials.from_service_account_file(
             "credentials.json", scopes=SCOPES
         )
-    return gspread.authorize(credentials)
+    _sheets_client = gspread.authorize(credentials)
+    return _sheets_client
 
 def _get_or_create_sheet(spreadsheet, name, rows=1000, cols=15):
     try:
