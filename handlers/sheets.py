@@ -51,7 +51,7 @@ def _rank_label(total_poin):
     return "🌱 Ranger Cadet"
 
 # ── Public: dipanggil dari pomodoro.py ───────────────────
-def log_session(ranger, correct, total, points, streak=0, longest_streak=0):
+def log_session(ranger, correct, total, points, streak=0, longest_streak=0, topik=""):
     spreadsheet_id = os.getenv("SPREADSHEET_ID")
     if not spreadsheet_id:
         print("SPREADSHEET_ID not set, skipping sheets log")
@@ -66,7 +66,7 @@ def log_session(ranger, correct, total, points, streak=0, longest_streak=0):
         # ── Tab 1: Log Harian ─────────────────────────
         sheet_log = _get_or_create_sheet(spreadsheet, "Log Harian")
         header_log = [
-            "Tanggal", "Nama", "Ranger", "Level",
+            "Tanggal", "Nama", "Ranger", "Level", "Topik",
             "Benar", "Total Soal", "% Benar", "Poin", "Streak", "Jam Selesai"
         ]
         _ensure_header(sheet_log, header_log)
@@ -75,6 +75,7 @@ def log_session(ranger, correct, total, points, streak=0, longest_streak=0):
             ranger["name"],
             ranger["ranger"],
             ranger["level"],
+            topik,
             correct,
             total,
             f"{pct}%",

@@ -170,6 +170,7 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["keys"] = result["kunci"]
     state["pembahasan"] = result["pembahasan"]
     state["rangkuman"] = result["rangkuman"]
+    state["topic"] = result.get("topik", "")
     state["waiting_for_photo"] = False
     state["pending_photos"] = []
     state["active"] = True
@@ -177,8 +178,10 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Kirim rangkuman text ──────────────────────────
     rangkuman = result["rangkuman"]
+    topik = state.get("topic", "")
+    topik_header = f"📚 {topik}\n\n" if topik else ""
     rangkuman_html = to_html(rangkuman)
-    chunks = split_message(f"📌 Rangkuman materi:\n\n{rangkuman_html}")
+    chunks = split_message(f"{topik_header}📌 Rangkuman materi:\n\n{rangkuman_html}")
     for i, chunk in enumerate(chunks):
         prefix = f"(Rangkuman {i+1}/{len(chunks)})\n" if len(chunks) > 1 else ""
         await update.message.reply_text(prefix + chunk, parse_mode="HTML")
@@ -342,7 +345,7 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         state["session_logged"] = True
         streak, longest_streak = update_streak(chat_id)
-        await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"], streak, longest_streak)
+        await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"], streak, longest_streak, state.get("topic", ""))
 
         new_total = get_total_points(chat_id)
         old_total = state.get("points_at_start", 0)

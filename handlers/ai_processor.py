@@ -80,6 +80,7 @@ Pertimbangkan:
 
 def parse_response(text):
     sections = {
+        "topik": "",
         "rangkuman": "",
         "soal": [],
         "kunci": [],
@@ -90,7 +91,9 @@ def parse_response(text):
 
     for line in text.split("\n"):
         line = line.strip()
-        if line == "===RANGKUMAN===":
+        if line == "===TOPIK===":
+            current = "topik"
+        elif line == "===RANGKUMAN===":
             current = "rangkuman"
         elif line == "===SOAL===":
             current = "soal"
@@ -98,6 +101,9 @@ def parse_response(text):
             current = "kunci"
         elif line == "===PEMBAHASAN===":
             current = "pembahasan"
+        elif current == "topik":
+            if line and not line.startswith("Identifikasi") and not line.startswith("Format") and not line.startswith("Contoh") and "|" not in line:
+                sections["topik"] = line
         elif current == "rangkuman":
             sections["rangkuman"] += line + "\n"
         elif current in ("soal", "kunci", "pembahasan"):
@@ -109,4 +115,5 @@ def parse_response(text):
                 sections[current][-1] += "\n" + line
 
     sections["rangkuman"] = sections["rangkuman"].strip()
+    sections["topik"] = sections["topik"].strip()
     return sections

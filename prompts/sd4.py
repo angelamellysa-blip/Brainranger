@@ -12,6 +12,12 @@ INSTRUKSI MEMBACA FOTO:
 
 Dari foto halaman buku yang dikirim, berikan output PERSIS dalam format ini:
 
+===TOPIK===
+Identifikasi mata pelajaran dan sub-topik dari foto. Pilih mata pelajaran dari daftar berikut PERSIS seperti tertulis:
+Matematika | IPAS | Bahasa Indonesia | Bahasa Inggris | PKN | Agama | PJOK | SBdP | PLH | Informatika
+Format: [Mata Pelajaran] / [Sub-topik spesifik]
+Contoh: IPAS / Siklus Air dan Perubahannya
+
 ===RANGKUMAN===
 Tulis rangkuman LENGKAP dan DETAIL dari semua materi di foto.
 WAJIB sertakan:
