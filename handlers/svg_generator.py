@@ -48,8 +48,8 @@ LARANGAN KERAS:
 def generate_illustration(topic_description: str, level: str) -> str | None:
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=2000,
+            model="claude-haiku-4-5",
+            max_tokens=1000,
             system=SVG_SYSTEM_PROMPT,
             messages=[{
                 "role": "user",
@@ -73,8 +73,8 @@ def needs_illustration(question: str) -> bool:
 def generate_svg(question: str, level: str) -> str | None:
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=2000,
+            model="claude-haiku-4-5",
+            max_tokens=1000,
             system=SVG_SYSTEM_PROMPT,
             messages=[{
                 "role": "user",

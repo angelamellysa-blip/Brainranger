@@ -65,6 +65,7 @@ LARANGAN: JANGAN cantumkan jawaban atau hint penyelesaian di dalam teks soal.
 10. [jawaban soal 10]
 
 ===PEMBAHASAN===
+PENTING: Setiap pembahasan MAKSIMAL 3 baris. Langsung ke poin, tanpa basa-basi.
 FORMAT WAJIB setiap pembahasan — JANGAN digabung jadi 1 baris:
 Untuk soal MATEMATIKA/BERHITUNG gunakan format:
   Caranya:

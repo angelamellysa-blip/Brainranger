@@ -74,6 +74,7 @@ LARANGAN: JANGAN cantumkan jawaban, angka hasil, atau hint penyelesaian di dalam
 15. [jawaban soal 15]
 
 ===PEMBAHASAN===
+PENTING: Setiap pembahasan MAKSIMAL 4 baris. Langsung ke poin, tanpa basa-basi.
 FORMAT WAJIB setiap pembahasan — JANGAN digabung jadi 1 baris:
 Untuk soal MATEMATIKA gunakan format:
   Diketahui: [data dari soal]

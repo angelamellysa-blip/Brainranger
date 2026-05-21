@@ -14,6 +14,13 @@ PROMPTS = {
     "SD Kelas 1": SD1_PROMPT,
 }
 
+# Max tokens per level — cukup untuk semua soal tanpa terpotong
+MAX_TOKENS = {
+    "SMP": 6000,
+    "SD Kelas 4": 5000,
+    "SD Kelas 1": 4000,
+}
+
 def get_system_prompt(level):
     return PROMPTS.get(level, SMP_PROMPT)
 
@@ -39,19 +46,18 @@ def process_photos(photo_bytes_list, ranger):
         )
     })
 
+    max_tokens = MAX_TOKENS.get(ranger["level"], 6000)
+
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=8096,
+        max_tokens=max_tokens,
         system=get_system_prompt(ranger["level"]),
         messages=[{"role": "user", "content": content}]
     )
 
-    # DEBUG: lihat raw response dari Claude
     raw = response.content[0].text
-    print(f"DEBUG RAW RESPONSE:\n{raw[:500]}")
-
-
-    return parse_response(response.content[0].text)
+    print(f"process_photos tokens used: {response.usage.output_tokens}/{max_tokens}")
+    return parse_response(raw)
 
 def evaluate_answer(soal, jawaban_anak, kunci_jawaban, level):
     prompt = f"""Kamu adalah guru {level} Indonesia yang sedang mengoreksi jawaban siswa.
@@ -66,11 +72,13 @@ Jawab hanya dengan satu kata: BENAR atau SALAH
 Pertimbangkan:
 - Jawaban dianggap BENAR jika maknanya sama meskipun berbeda kata
 - Jawaban dianggap BENAR jika konsepnya tepat meskipun tidak persis sama dengan kunci
-- Jawaban dianggap SALAH jika konsep atau faktanya keliru
+- Jawaban dianggap BENAR jika menggunakan singkatan, simbol, atau format berbeda tapi benar
+- Jawaban dianggap BENAR jika nilai numeriknya benar meski satuan ditulis berbeda
+- Jawaban dianggap SALAH hanya jika konsep atau faktanya memang keliru
 """
 
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-haiku-4-5",
         max_tokens=10,
         messages=[{"role": "user", "content": prompt}]
     )
