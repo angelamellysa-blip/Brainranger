@@ -8,7 +8,7 @@ from config import get_ranger, PARENT_CHAT_ID
 from handlers.ai_processor import process_photos, evaluate_answer
 from utils.message_splitter import split_message, to_html, strip_markdown
 from utils.state_manager import load_all_states, save_all_states
-from utils.points import add_points, update_streak
+from utils.points import add_points, update_streak, get_streak, get_total_points, get_rank
 from handlers.sheets import log_session
 from handlers.svg_generator import needs_illustration, generate_svg, generate_illustration, svg_to_png
 
@@ -38,6 +38,7 @@ def init_session(chat_id):
         "awaiting_answers": False,
         "current_question": 0,
         "correct_count": 0,
+        "points_at_start": 0,
     }
     save_all_states(session_state)
 
@@ -57,10 +58,28 @@ async def handle_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = get_state(chat_id)
     state["waiting_for_photo"] = True
     state["current_session"] = 1
+    state["points_at_start"] = get_total_points(chat_id)
     save_all_states(session_state)
+
+    streak, _ = get_streak(chat_id)
+    total = get_total_points(chat_id)
+    rank_emoji, rank_name = get_rank(total)
+
+    if streak >= 10:
+        streak_msg = f"🔥 Streak {streak} hari! Luar biasa, pertahankan!\n"
+    elif streak >= 5:
+        streak_msg = f"🔥 Streak {streak} hari berturut-turut! Jangan putus!\n"
+    elif streak >= 2:
+        streak_msg = f"⚡ Streak {streak} hari! Terus semangat!\n"
+    elif streak == 1:
+        streak_msg = f"✨ Streak dimulai! Pertahankan ya!\n"
+    else:
+        streak_msg = f"💪 Yuk mulai streak hari ini!\n"
 
     await update.message.reply_text(
         f"{ranger['emoji']} {ranger['ranger']} siap tempur!\n\n"
+        f"{streak_msg}"
+        f"Rank: {rank_emoji} {rank_name} | Total: {total} ⚡\n\n"
         f"Foto halaman buku yang mau kamu pelajari sekarang.\n"
         f"Boleh kirim lebih dari 1 foto.\n"
         f"Kalau sudah semua, ketik /selesai"
@@ -325,12 +344,27 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         streak, longest_streak = update_streak(chat_id)
         await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"], streak, longest_streak)
 
+        new_total = get_total_points(chat_id)
+        old_total = state.get("points_at_start", 0)
+        old_rank  = get_rank(old_total)
+        new_rank  = get_rank(new_total)
+
         await update.message.reply_text(
             f"{ranger['emoji']} MISI SELESAI, {ranger['name']}! ⚡\n\n"
             f"Soal benar: {correct}/{total_q}\n"
-            f"Power hari ini: +{state['points_today']} ⚡\n\n"
+            f"Power hari ini: +{state['points_today']} ⚡\n"
+            f"Total power: {new_total} ⚡\n\n"
             f"{ranger['ranger']} makin kuat! 🔥"
         )
+
+        if old_rank != new_rank:
+            await update.message.reply_text(
+                f"🎉 LEVEL UP, {ranger['name']}!\n\n"
+                f"{old_rank[0]} {old_rank[1]}\n"
+                f"     ↓\n"
+                f"{new_rank[0]} {new_rank[1]}\n\n"
+                f"Pencapaian baru! Terus pertahankan! 💪"
+            )
 
         await send_celebration(context.bot, chat_id)
 

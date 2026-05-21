@@ -4,7 +4,7 @@ import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from config import TELEGRAM_BOT_TOKEN, PARENT_CHAT_ID, REMINDER_HOUR, REMINDER_MINUTE, DIGEST_HOUR, DIGEST_MINUTE, get_ranger, is_ranger, is_parent
-from utils.points import get_today_points, get_total_points, get_all_today
+from utils.points import get_today_points, get_total_points, get_all_today, get_streak, get_rank
 from handlers.pomodoro import (
     handle_mulai, handle_photo, handle_selesai,
     handle_lanjut, handle_skip, handle_answer,
@@ -46,11 +46,34 @@ async def squad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_parent(chat_id):
         return
     from config import RANGERS
-    msg = "🦸 BrainRanger Squad Status\n\n"
+    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
+    msg = f"🦸 BrainRanger Squad\n{now.strftime('%d %b %Y, %H:%M')} WIB\n"
+    msg += "━━━━━━━━━━━━━━━\n\n"
     for cid, r in RANGERS.items():
-        state = get_state(cid)
-        active = "🟢 aktif" if state.get("active") else "⚪ belum mulai"
-        msg += f"{r['emoji']} {r['name']} ({r['ranger']}) — {active}\n"
+        if cid == 0:
+            continue
+        state  = get_state(cid)
+        today  = get_today_points(cid)
+        total  = get_total_points(cid)
+        streak, _ = get_streak(cid)
+        rank_emoji, rank_name = get_rank(total)
+
+        if state.get("all_sessions_done"):
+            correct = state.get("correct_count", 0)
+            total_q = len(state.get("questions", []))
+            status  = f"✅ Selesai ({correct}/{total_q} benar)"
+        elif state.get("active"):
+            status = "🟢 Sedang belajar"
+        else:
+            status = "⚪ Belum mulai"
+
+        streak_str = f"{streak} hari 🔥" if streak >= 3 else f"{streak} hari"
+        msg += (
+            f"{r['emoji']} {r['name']} ({r['ranger']})\n"
+            f"   {status}\n"
+            f"   Hari ini: +{today} ⚡ | Total: {total} ⚡\n"
+            f"   Streak: {streak_str} | {rank_emoji} {rank_name}\n\n"
+        )
     await update.message.reply_text(msg)
 
 async def power(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -65,6 +88,27 @@ async def power(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Poin hari ini: {today} ⚡\n"
         f"Total semua waktu: {total} ⚡"
     )
+
+async def check_inactive_rangers(context: ContextTypes.DEFAULT_TYPE):
+    from config import RANGERS
+    from datetime import date
+    belum = []
+    for cid, r in RANGERS.items():
+        if cid == 0:
+            continue
+        state = get_state(cid)
+        if state.get("all_sessions_done"):
+            continue
+        session_start = state.get("session_start")
+        started_today = bool(session_start and session_start.startswith(str(date.today())))
+        if not started_today:
+            belum.append(r)
+    if belum:
+        names = "\n".join([f"{r['emoji']} {r['name']} ({r['ranger']})" for r in belum])
+        await context.bot.send_message(
+            chat_id=PARENT_CHAT_ID,
+            text=f"⚠️ Ranger belum mulai belajar malam ini:\n\n{names}"
+        )
 
 async def send_reminders(context: ContextTypes.DEFAULT_TYPE):
     from config import RANGERS
@@ -163,6 +207,16 @@ def main():
             tzinfo=datetime.timezone(datetime.timedelta(hours=7))
         ),
         name="daily_digest"
+    )
+
+    app.job_queue.run_daily(
+        check_inactive_rangers,
+        time=datetime.time(
+            hour=20,
+            minute=0,
+            tzinfo=datetime.timezone(datetime.timedelta(hours=7))
+        ),
+        name="inactive_check"
     )
 
     app.job_queue.run_daily(

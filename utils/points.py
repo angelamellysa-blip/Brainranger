@@ -70,6 +70,13 @@ def get_total_points(chat_id):
     daily = user.get("daily", user)
     return sum(v for v in daily.values() if isinstance(v, (int, float)))
 
+def get_rank(total_points):
+    if total_points >= 1000: return ("👑", "Ranger Legendaris")
+    if total_points >= 601:  return ("💎", "Ranger Elite")
+    if total_points >= 301:  return ("🔥", "Ranger Tangguh")
+    if total_points >= 101:  return ("⚡", "Ranger Aktif")
+    return ("🌱", "Ranger Cadet")
+
 def get_all_today():
     today = str(date.today())
     data = _load()
