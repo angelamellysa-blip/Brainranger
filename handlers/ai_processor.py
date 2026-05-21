@@ -106,7 +106,7 @@ def parse_response(text):
                 if len(parts) > 1:
                     sections[current].append(parts[1].strip())
             elif line and sections[current]:
-                sections[current][-1] += " " + line
+                sections[current][-1] += "\n" + line
 
     sections["rangkuman"] = sections["rangkuman"].strip()
     return sections

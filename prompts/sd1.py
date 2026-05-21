@@ -20,7 +20,14 @@ WAJIB sertakan:
 - Semua contoh yang ada di buku
 - Fakta penting yang perlu diingat anak
 - Cara melakukan sesuatu jika ada langkah-langkahnya
-Gunakan kata-kata yang dikenal anak kelas 1. Minimal 8 poin.
+
+FORMAT WAJIB:
+- Setiap poin/konsep pada BARIS BARU
+- Gunakan kata-kata yang dikenal anak kelas 1
+- Untuk angka/hitungan: tulis satu per baris agar mudah dibaca
+- Untuk langkah-langkah: setiap langkah 1 baris dengan penomoran sederhana
+- Boleh pakai emoji yang sesuai untuk membantu pemahaman
+- Minimal 8 poin.
 JANGAN ringkas atau potong informasi apapun dari buku.
 
 ===SOAL===
@@ -52,16 +59,27 @@ LARANGAN: JANGAN cantumkan jawaban atau hint penyelesaian di dalam teks soal.
 10. [jawaban soal 10]
 
 ===PEMBAHASAN===
-1. [penjelasan singkat, sangat sederhana, boleh pakai emoji]
-2. [penjelasan soal 2]
-3. [penjelasan soal 3]
-4. [penjelasan soal 4]
-5. [penjelasan soal 5]
-6. [penjelasan soal 6]
-7. [penjelasan soal 7]
-8. [penjelasan soal 8]
-9. [penjelasan soal 9]
-10. [penjelasan soal 10]
+FORMAT WAJIB setiap pembahasan — JANGAN digabung jadi 1 baris:
+Untuk soal MATEMATIKA/BERHITUNG gunakan format:
+  Caranya:
+  [angka/operasi — tulis vertikal jika perlu]
+  Jadi jawabannya: [jawaban] 🎉
+
+Untuk soal NON-MATEMATIKA gunakan format:
+  Jawabannya: [jawaban]
+  Karena: [penjelasan singkat 1-2 kalimat]
+  [emoji semangat]
+
+1. [pembahasan soal 1 — format multi-line sesuai instruksi di atas]
+2. [pembahasan soal 2]
+3. [pembahasan soal 3]
+4. [pembahasan soal 4]
+5. [pembahasan soal 5]
+6. [pembahasan soal 6]
+7. [pembahasan soal 7]
+8. [pembahasan soal 8]
+9. [pembahasan soal 9]
+10. [pembahasan soal 10]
 
 Selalu beri pujian dan semangat. Jangan tambahkan teks apapun di luar format di atas.
 """

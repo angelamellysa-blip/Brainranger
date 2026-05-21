@@ -7,7 +7,7 @@ from utils.points import get_today_points, get_total_points, get_all_today
 from handlers.pomodoro import (
     handle_mulai, handle_photo, handle_selesai,
     handle_lanjut, handle_skip, handle_answer,
-    get_state, init_session
+    handle_sticker, get_state, init_session
 )
 
 logging.basicConfig(
@@ -120,7 +120,8 @@ def main():
     app.add_handler(CommandHandler("lanjut",        handle_lanjut))
     app.add_handler(CommandHandler("skip",          handle_skip))
     app.add_handler(CommandHandler("testreminder",  test_reminder))
-    app.add_handler(MessageHandler(filters.PHOTO,   handle_photo))
+    app.add_handler(MessageHandler(filters.PHOTO,       handle_photo))
+    app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND, handle_answer
     ))

@@ -16,15 +16,21 @@ Dari foto halaman buku yang dikirim, berikan output PERSIS dalam format ini:
 Tulis rangkuman LENGKAP dan DETAIL dari semua materi di foto.
 WAJIB sertakan:
 - Semua definisi dengan bahasa yang mudah dipahami anak kelas 4
-- Semua rumus atau cara perhitungan yang ada
+- Semua rumus atau cara perhitungan yang ada (setiap rumus 1 baris sendiri)
 - Semua contoh soal yang ada di buku beserta penyelesaiannya
 - Langkah-langkah atau cara kerja suatu proses
 - Fakta-fakta penting yang perlu diingat
-Gunakan bullet point. Kalimat pendek dan jelas. Minimal 10 poin.
+
+FORMAT WAJIB:
+- Setiap poin/konsep pada BARIS BARU
+- Untuk rumus matematika: tulis satu rumus per baris, jelas dan mudah dibaca
+- Untuk tabel/data: susun rapi dengan spasi yang konsisten
+- Untuk langkah-langkah: setiap langkah 1 baris dengan penomoran jelas
+- Kalimat pendek dan jelas. Minimal 10 poin.
 JANGAN ringkas atau potong informasi apapun dari buku.
 
 ===SOAL===
-Buat 10 soal yang mencakup semua aspek materi di foto.
+Buat 15 soal yang mencakup semua aspek materi di foto.
 Sesuaikan dengan level SD kelas 4. Variasikan dari mudah ke sulit.
 HANYA buat soal dari materi yang ada di foto.
 LARANGAN: JANGAN cantumkan jawaban, angka hasil, atau hint penyelesaian di dalam teks soal.
@@ -38,6 +44,11 @@ LARANGAN: JANGAN cantumkan jawaban, angka hasil, atau hint penyelesaian di dalam
 8. [soal 8]
 9. [soal 9]
 10. [soal 10]
+11. [soal 11]
+12. [soal 12]
+13. [soal 13]
+14. [soal 14]
+15. [soal 15]
 
 ===KUNCI===
 1. [jawaban soal 1]
@@ -50,18 +61,44 @@ LARANGAN: JANGAN cantumkan jawaban, angka hasil, atau hint penyelesaian di dalam
 8. [jawaban soal 8]
 9. [jawaban soal 9]
 10. [jawaban soal 10]
+11. [jawaban soal 11]
+12. [jawaban soal 12]
+13. [jawaban soal 13]
+14. [jawaban soal 14]
+15. [jawaban soal 15]
 
 ===PEMBAHASAN===
-1. [penjelasan langkah per langkah, bahasa ramah anak, contoh konkret]
-2. [penjelasan soal 2]
-3. [penjelasan soal 3]
-4. [penjelasan soal 4]
-5. [penjelasan soal 5]
-6. [penjelasan soal 6]
-7. [penjelasan soal 7]
-8. [penjelasan soal 8]
-9. [penjelasan soal 9]
-10. [penjelasan soal 10]
+FORMAT WAJIB setiap pembahasan — JANGAN digabung jadi 1 baris:
+Untuk soal MATEMATIKA gunakan format:
+  Diketahui: [data dari soal]
+  Ditanya: [yang dicari]
+  Cara:
+  Langkah 1: [operasi/cara hitung]
+  Langkah 2: [operasi lanjutan]
+  Jadi: [jawaban akhir]
+
+Untuk soal NON-MATEMATIKA gunakan format:
+  Jawaban: [poin utama]
+  Penjelasan:
+  - [poin 1]
+  - [poin 2]
+  Ingat: [tips/kesimpulan singkat]
+
+1. [pembahasan soal 1 — format multi-line sesuai instruksi di atas]
+2. [pembahasan soal 2]
+3. [pembahasan soal 3]
+4. [pembahasan soal 4]
+5. [pembahasan soal 5]
+6. [pembahasan soal 6]
+7. [pembahasan soal 7]
+8. [pembahasan soal 8]
+9. [pembahasan soal 9]
+10. [pembahasan soal 10]
+11. [pembahasan soal 11]
+12. [pembahasan soal 12]
+13. [pembahasan soal 13]
+14. [pembahasan soal 14]
+15. [pembahasan soal 15]
 
 Selalu beri semangat di akhir setiap pembahasan. Jangan tambahkan teks apapun di luar format di atas.
 """

@@ -45,6 +45,27 @@ LARANGAN KERAS:
 - Ilustrasi hanya menggambarkan bentuk + ukuran yang DIKETAHUI saja
 """
 
+def generate_illustration(topic_description: str, level: str) -> str | None:
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2000,
+            system=SVG_SYSTEM_PROMPT,
+            messages=[{
+                "role": "user",
+                "content": f"Buat ilustrasi SVG untuk materi berikut (level {level}):\n\n{topic_description}"
+            }]
+        )
+        raw = response.content[0].text.strip()
+        match = re.search(r'<svg[\s\S]*?</svg>', raw, re.DOTALL)
+        if match:
+            return match.group(0)
+        print(f"SVG rangkuman tidak ditemukan dalam response: {raw[:200]}")
+        return None
+    except Exception as e:
+        print(f"SVG illustration error: {e}")
+        return None
+
 def needs_illustration(question: str) -> bool:
     q_lower = question.lower()
     return any(kw in q_lower for kw in ILLUSTRATION_KEYWORDS)

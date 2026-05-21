@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import os
-from datetime import datetime
+import random
 from telegram import Update
 from telegram.ext import ContextTypes
 from config import get_ranger, PARENT_CHAT_ID
@@ -10,9 +10,13 @@ from utils.message_splitter import split_message, to_html, strip_markdown
 from utils.state_manager import load_all_states, save_all_states
 from utils.points import add_points
 from handlers.sheets import log_session
-from handlers.svg_generator import needs_illustration, generate_svg, svg_to_png
+from handlers.svg_generator import needs_illustration, generate_svg, generate_illustration, svg_to_png
 
 session_state = load_all_states()
+
+# Isi dengan sticker file_id dari Telegram.
+# Cara dapat file_id: kirim sticker ke bot → lihat log "Sticker file_id: ..."
+CELEBRATION_STICKERS = []
 
 def init_session(chat_id):
     session_state[chat_id] = {
@@ -147,9 +151,10 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["rangkuman"] = result["rangkuman"]
     state["waiting_for_photo"] = False
     state["pending_photos"] = []
+    state["active"] = True
     save_all_states(session_state)
 
-    # ── SESI 1: Kirim rangkuman + audio ──────────────
+    # ── Kirim rangkuman text ──────────────────────────
     rangkuman = result["rangkuman"]
     rangkuman_html = to_html(rangkuman)
     chunks = split_message(f"📌 Rangkuman materi:\n\n{rangkuman_html}")
@@ -157,7 +162,18 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prefix = f"(Rangkuman {i+1}/{len(chunks)})\n" if len(chunks) > 1 else ""
         await update.message.reply_text(prefix + chunk, parse_mode="HTML")
 
-    # Generate & kirim podcast audio (tanpa markdown)
+    # ── Ilustrasi untuk rangkuman jika materi visual ──
+    if needs_illustration(rangkuman):
+        try:
+            svg = await asyncio.to_thread(generate_illustration, rangkuman[:400], ranger["level"])
+            if svg:
+                png = await asyncio.to_thread(svg_to_png, svg)
+                if png:
+                    await update.message.reply_photo(photo=png, caption="📐 Ilustrasi materi")
+        except Exception as e:
+            print(f"Ilustrasi rangkuman gagal: {e}")
+
+    # ── Generate & kirim podcast audio ───────────────
     rangkuman_tts = strip_markdown(rangkuman)
     try:
         from handlers.tts import generate_podcast
@@ -180,75 +196,14 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Audio podcast tidak tersedia, tapi rangkuman text sudah ada ya!"
         )
 
-    # Start timer sesi 1
-    state["active"] = True
-    state["session_start"] = datetime.now().isoformat()
-    save_all_states(session_state)
-
-    context.job_queue.run_once(
-        session_end,
-        when=ranger["focus_minutes"] * 60,
-        chat_id=chat_id,
-        name=f"session_{chat_id}",
-        data={"ranger": ranger, "session": 1}
-    )
-
+    total_soal = len(state["questions"])
     await update.message.reply_text(
-        f"⏱ Sesi 1 dimulai — {ranger['focus_minutes']} menit!\n\n"
-        f"Baca rangkuman & dengerin podcast dulu ya.\n"
-        f"Nanti setelah timer selesai, kamu akan ditest! 💪"
+        f"✅ Materi siap!\n\n"
+        f"Ada {total_soal} soal menunggumu.\n"
+        f"Kalau sudah siap, ketik /lanjut untuk mulai test! 💪"
     )
 
-# ── Session end ───────────────────────────────────────
-async def session_end(context: ContextTypes.DEFAULT_TYPE):
-    job = context.job
-    chat_id = job.chat_id
-    ranger = job.data["ranger"]
-    session = job.data["session"]
-    state = get_state(chat_id)
-    state["active"] = False
-    save_all_states(session_state)
-
-    if session == 1:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=(
-                f"{ranger['emoji']} Sesi 1 selesai! Semoga sudah paham materinya!\n\n"
-                f"Break {ranger['break_minutes']} menit dulu ya.\n\n"
-                f"Setelah siap, ketik /lanjut untuk mulai sesi test! 📝"
-            )
-        )
-    else:
-        state["all_sessions_done"] = True
-        total_q = len(state["questions"])
-        correct = state["correct_count"]
-        save_all_states(session_state)
-
-        # Log ke Google Sheets (hanya jika belum di-log dari handle_answer)
-        if not state.get("session_logged"):
-            await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"])
-
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=(
-                f"{ranger['emoji']} MISI SELESAI, {ranger['name']}! ⚡\n\n"
-                f"Full 2 sesi completed!\n"
-                f"Soal benar: {correct}/{total_q}\n"
-                f"Power hari ini: +{state['points_today']} ⚡\n\n"
-                f"{ranger['ranger']} makin kuat! 🔥"
-            )
-        )
-        await context.bot.send_message(
-            chat_id=PARENT_CHAT_ID,
-            text=(
-                f"{ranger['emoji']} {ranger['name']} ({ranger['ranger']}) "
-                f"selesai belajar! ✅\n"
-                f"Soal benar: {correct}/{total_q}\n"
-                f"Power: +{state['points_today']} ⚡"
-            )
-        )
-
-# ── /lanjut → mulai sesi 2 (TEST) ────────────────────
+# ── /lanjut → mulai sesi test ─────────────────────────
 async def handle_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     ranger = get_ranger(chat_id)
@@ -257,7 +212,6 @@ async def handle_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state = get_state(chat_id)
 
-    # Validasi — pastikan ada soal
     if not state.get("questions"):
         await update.message.reply_text(
             f"{ranger['emoji']} Belum ada materi yang diproses.\n"
@@ -265,7 +219,6 @@ async def handle_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    state["active"] = True
     state["current_session"] = 2
     state["awaiting_answers"] = True
     state["current_question"] = 0
@@ -273,24 +226,14 @@ async def handle_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["correct_count"] = 0
     save_all_states(session_state)
 
+    total_soal = len(state["questions"])
     await update.message.reply_text(
-        f"{ranger['emoji']} Sesi 2 dimulai — saatnya ditest! 📝\n\n"
-        f"Ada {len(state['questions'])} soal yang harus dijawab.\n"
-        f"Jawab satu per satu ya!\n\n"
-        f"⏱ Timer {ranger['focus_minutes']} menit dimulai!"
+        f"{ranger['emoji']} Siap ditest! 📝\n\n"
+        f"Ada {total_soal} soal yang harus dijawab.\n"
+        f"Jawab satu per satu ya!"
     )
 
-    # Kirim soal pertama
     await send_next_question(context.bot, chat_id, state, ranger)
-
-    # Start timer sesi 2
-    context.job_queue.run_once(
-        session_end,
-        when=ranger["focus_minutes"] * 60,
-        chat_id=chat_id,
-        name=f"session2_{chat_id}",
-        data={"ranger": ranger, "session": 2}
-    )
 
 # ── Kirim soal berikutnya ─────────────────────────────
 async def send_next_question(bot, chat_id, state, ranger):
@@ -303,23 +246,17 @@ async def send_next_question(bot, chat_id, state, ranger):
     soal = state["questions"][current_q]
     caption = f"❓ Soal {current_q + 1}/{total_q}\n\n{soal}"
 
-    # Coba generate ilustrasi SVG kalau soal butuh gambar
     if needs_illustration(soal):
         try:
             svg = await asyncio.to_thread(generate_svg, soal, ranger["level"])
             if svg:
                 png = await asyncio.to_thread(svg_to_png, svg)
                 if png:
-                    await bot.send_photo(
-                        chat_id=chat_id,
-                        photo=png,
-                        caption=caption
-                    )
+                    await bot.send_photo(chat_id=chat_id, photo=png, caption=caption)
                     return
         except Exception as e:
-            print(f"Ilustrasi gagal, fallback ke teks: {e}")
+            print(f"Ilustrasi soal gagal, fallback ke teks: {e}")
 
-    # Fallback: kirim sebagai teks biasa
     await bot.send_message(chat_id=chat_id, text=caption)
 
 # ── Handler jawaban ───────────────────────────────────
@@ -344,7 +281,6 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pembahasan = state["pembahasan"][current_q] if current_q < len(state["pembahasan"]) else ""
     soal = state["questions"][current_q]
 
-    # Evaluasi jawaban via Claude
     try:
         is_correct = await asyncio.to_thread(
             evaluate_answer,
@@ -364,7 +300,7 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state["points_today"] += 10
         state["correct_count"] += 1
         add_points(chat_id, 10)
-        result_text = f"✅ RANGER STRIKE! Jawaban tepat sasaran!\n\n"
+        result_text = "✅ RANGER STRIKE! Jawaban tepat sasaran!\n\n"
     else:
         state["points_today"] += 2
         add_points(chat_id, 2)
@@ -376,7 +312,6 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["current_question"] += 1
     save_all_states(session_state)
 
-    # Cek apakah semua soal sudah dijawab
     if state["current_question"] >= len(state["questions"]):
         state["awaiting_answers"] = False
         state["all_sessions_done"] = True
@@ -384,21 +319,18 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_q = len(state["questions"])
         save_all_states(session_state)
 
-        # Cancel timer sesi 2 agar tidak double notif
-        for job in context.job_queue.get_jobs_by_name(f"session2_{chat_id}"):
-            job.schedule_removal()
-
-        # Log ke Google Sheets
         state["session_logged"] = True
         await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"])
 
         await update.message.reply_text(
             f"{ranger['emoji']} MISI SELESAI, {ranger['name']}! ⚡\n\n"
-            f"Full 2 sesi completed!\n"
             f"Soal benar: {correct}/{total_q}\n"
             f"Power hari ini: +{state['points_today']} ⚡\n\n"
             f"{ranger['ranger']} makin kuat! 🔥"
         )
+
+        await send_celebration(context.bot, chat_id)
+
         await context.bot.send_message(
             chat_id=PARENT_CHAT_ID,
             text=(
@@ -410,6 +342,22 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await send_next_question(context.bot, chat_id, state, ranger)
+
+# ── Kirim apresiasi sticker ───────────────────────────
+async def send_celebration(bot, chat_id):
+    if CELEBRATION_STICKERS:
+        try:
+            await bot.send_sticker(chat_id=chat_id, sticker=random.choice(CELEBRATION_STICKERS))
+            return
+        except Exception as e:
+            print(f"Sticker error: {e}")
+    # Fallback jika list kosong atau gagal
+    await bot.send_message(chat_id=chat_id, text="🎉🏆⚡🌟🎊💥🔥👑")
+
+# ── Capture sticker file_id (untuk setup CELEBRATION_STICKERS) ──
+async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    sticker = update.message.sticker
+    print(f"Sticker file_id: {sticker.file_id} | animated: {sticker.is_animated} | emoji: {sticker.emoji}")
 
 # ── /skip ─────────────────────────────────────────────
 async def handle_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
