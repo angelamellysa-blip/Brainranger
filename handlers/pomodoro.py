@@ -9,7 +9,7 @@ from handlers.ai_processor import process_photos, evaluate_answer
 from utils.message_splitter import split_message, to_html, strip_markdown
 from utils.state_manager import load_all_states, save_all_states
 from utils.points import add_points, update_streak, get_streak, get_total_points, get_rank
-from utils.bank_soal import save_session, get_mapel_list, get_random_soal, get_salah_soal, update_result, get_stats
+from utils.bank_soal import save_session, get_mapel_list, get_random_soal, get_salah_soal, update_result, get_stats, get_weak_topics
 from handlers.sheets import log_session
 from handlers.svg_generator import needs_illustration, generate_svg, generate_illustration, svg_to_png
 
@@ -419,6 +419,21 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await send_celebration(context.bot, chat_id)
 
+            # ── Insight topik lemah ───────────────────
+            weak = get_weak_topics(chat_id, top_n=3)
+            if weak:
+                top = weak[0]
+                weak_lines = "\n".join(
+                    f"  {'🔴' if i == 0 else '🟡'} {w['mapel']} — {w['salah']}x salah"
+                    for i, w in enumerate(weak)
+                )
+                await update.message.reply_text(
+                    f"📊 Analisis belajarmu:\n\n"
+                    f"{weak_lines}\n\n"
+                    f"💡 Paling perlu diulang: {top['mapel']}\n"
+                    f"Ketik /ulang untuk latihan soal yang masih salah!"
+                )
+
             await context.bot.send_message(
                 chat_id=PARENT_CHAT_ID,
                 text=(
@@ -426,6 +441,7 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"selesai belajar! ✅\n"
                     f"Soal benar: {correct}/{total_q}\n"
                     f"Power: +{state['points_today']} ⚡"
+                    + (f"\n📊 Topik lemah: {weak[0]['mapel']} ({weak[0]['salah']}x salah)" if weak else "")
                 )
             )
     else:

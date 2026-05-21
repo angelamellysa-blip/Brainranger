@@ -5,6 +5,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from config import TELEGRAM_BOT_TOKEN, PARENT_CHAT_ID, REMINDER_HOUR, REMINDER_MINUTE, DIGEST_HOUR, DIGEST_MINUTE, get_ranger, is_ranger, is_parent
 from utils.points import get_today_points, get_total_points, get_all_today, get_streak, get_rank
+from utils.bank_soal import get_weak_topics
 from handlers.pomodoro import (
     handle_mulai, handle_photo, handle_selesai,
     handle_lanjut, handle_skip, handle_answer,
@@ -104,11 +105,16 @@ async def squad(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status = "⚪ Belum mulai"
 
         streak_str = f"{streak} hari 🔥" if streak >= 3 else f"{streak} hari"
+
+        weak = get_weak_topics(cid, top_n=1)
+        weak_str = f"⚠️ Lemah: {weak[0]['mapel']} ({weak[0]['salah']}x)" if weak else "✨ Belum ada data"
+
         msg += (
             f"{r['emoji']} {r['name']} ({r['ranger']})\n"
             f"   {status}\n"
             f"   Hari ini: +{today} ⚡ | Total: {total} ⚡\n"
-            f"   Streak: {streak_str} | {rank_emoji} {rank_name}\n\n"
+            f"   Streak: {streak_str} | {rank_emoji} {rank_name}\n"
+            f"   {weak_str}\n\n"
         )
     await update.message.reply_text(msg)
 

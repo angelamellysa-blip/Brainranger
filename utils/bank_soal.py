@@ -110,3 +110,34 @@ def get_stats(chat_id):
     salah = sum(1 for s in pool if s.get("last_benar") == False)
     belum = sum(1 for s in pool if s.get("last_benar") is None)
     return {"total": total, "salah": salah, "belum_dicoba": belum}
+
+# ── Analisis topik lemah ──────────────────────────────
+def get_weak_topics(chat_id, top_n=3):
+    """
+    Kembalikan list topik lemah berdasarkan salah_count.
+    Hanya topik yang pernah dicoba dan punya kesalahan.
+    Return: [{"mapel": str, "salah": int, "total_tried": int}, ...]
+    """
+    data = _load()
+    pool = data.get(str(chat_id), [])
+
+    mapel_stats = {}
+    for s in pool:
+        mapel       = s.get("mapel", "Lainnya")
+        salah_count = s.get("salah_count", 0)
+        benar_count = s.get("benar_count", 0)
+        total_tried = salah_count + benar_count
+
+        if mapel not in mapel_stats:
+            mapel_stats[mapel] = {"salah": 0, "total_tried": 0}
+
+        mapel_stats[mapel]["salah"]       += salah_count
+        mapel_stats[mapel]["total_tried"] += total_tried
+
+    weak = [
+        {"mapel": mapel, "salah": stats["salah"], "total_tried": stats["total_tried"]}
+        for mapel, stats in mapel_stats.items()
+        if stats["salah"] > 0
+    ]
+    weak.sort(key=lambda x: x["salah"], reverse=True)
+    return weak[:top_n]
