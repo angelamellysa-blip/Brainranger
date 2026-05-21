@@ -60,31 +60,56 @@ def process_photos(photo_bytes_list, ranger):
     return parse_response(raw)
 
 def evaluate_answer(soal, jawaban_anak, kunci_jawaban, level):
-    prompt = f"""Kamu adalah guru {level} Indonesia yang sedang mengoreksi jawaban siswa.
+    """
+    Returns: (verdict, catatan)
+    verdict : "BENAR" | "SEBAGIAN" | "SALAH"
+    catatan : string penjelasan singkat (hanya untuk SEBAGIAN)
+    """
+    prompt = f"""Kamu adalah guru {level} Indonesia yang mengoreksi jawaban siswa.
 
 Soal: {soal}
 Kunci jawaban: {kunci_jawaban}
 Jawaban siswa: {jawaban_anak}
 
-Apakah jawaban siswa BENAR secara makna dan konsep?
-Jawab hanya dengan satu kata: BENAR atau SALAH
+Nilai jawaban siswa dengan salah satu dari 3 pilihan:
 
-Pertimbangkan:
-- Jawaban dianggap BENAR jika maknanya sama meskipun berbeda kata
-- Jawaban dianggap BENAR jika konsepnya tepat meskipun tidak persis sama dengan kunci
-- Jawaban dianggap BENAR jika menggunakan singkatan, simbol, atau format berbeda tapi benar
-- Jawaban dianggap BENAR jika nilai numeriknya benar meski satuan ditulis berbeda
-- Jawaban dianggap SALAH hanya jika konsep atau faktanya memang keliru
+BENAR — jika:
+- Makna atau konsep sama meski kata berbeda
+- Singkatan/simbol/format berbeda tapi benar
+- Nilai numerik benar meski satuan ditulis beda
+- Jawaban tidak lengkap tapi inti konsep tepat
+
+SEBAGIAN — jika:
+- Konsep utama benar tapi ada bagian yang kurang atau salah
+- Jawaban benar tapi penjelasan tidak lengkap
+- Ada kesalahan kecil tapi ide pokoknya tepat
+
+SALAH — jika:
+- Konsep atau fakta memang keliru
+- Jawaban tidak nyambung dengan soal
+
+Format jawaban (WAJIB ikuti persis):
+Jika BENAR  → tulis: BENAR
+Jika SEBAGIAN → tulis: SEBAGIAN | [max 8 kata yang kurang]
+Jika SALAH  → tulis: SALAH
 """
 
     response = client.messages.create(
         model="claude-haiku-4-5",
-        max_tokens=10,
+        max_tokens=30,
         messages=[{"role": "user", "content": prompt}]
     )
 
-    result = response.content[0].text.strip().upper()
-    return "BENAR" in result
+    raw = response.content[0].text.strip().upper()
+
+    if raw.startswith("BENAR"):
+        return ("BENAR", "")
+    elif raw.startswith("SEBAGIAN"):
+        parts = raw.split("|", 1)
+        catatan = parts[1].strip().capitalize() if len(parts) > 1 else ""
+        return ("SEBAGIAN", catatan)
+    else:
+        return ("SALAH", "")
 
 def parse_response(text):
     sections = {

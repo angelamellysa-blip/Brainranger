@@ -316,7 +316,7 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     soal = state["questions"][current_q]
 
     try:
-        is_correct = await asyncio.to_thread(
+        verdict, catatan = await asyncio.to_thread(
             evaluate_answer,
             soal,
             answer,
@@ -324,30 +324,39 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ranger["level"]
         )
     except Exception:
-        is_correct = (
+        simple_match = (
             answer.lower() == correct_answer.lower() or
             answer.lower() in correct_answer.lower() or
             correct_answer.lower() in answer.lower()
         )
+        verdict = "BENAR" if simple_match else "SALAH"
+        catatan = ""
 
-    if is_correct:
+    if verdict == "BENAR":
         state["points_today"] += 10
         state["correct_count"] += 1
         add_points(chat_id, 10)
-        result_text = "✅ RANGER STRIKE! Jawaban tepat sasaran!\n\n"
+        result_text = "✅ RANGER STRIKE! Jawaban tepat sasaran! +10 ⚡\n\n"
+    elif verdict == "SEBAGIAN":
+        state["points_today"] += 5
+        state["correct_count"] += 1
+        add_points(chat_id, 5)
+        catatan_text = f"\n💡 Yang kurang: {catatan}" if catatan else ""
+        result_text = f"⚠️ Hampir benar! +5 ⚡{catatan_text}\n\n"
     else:
         state["points_today"] += 2
         add_points(chat_id, 2)
-        result_text = f"❌ Belum tepat, tapi tetap semangat!\nJawaban: {correct_answer}\n\n"
+        result_text = f"❌ Belum tepat, tapi tetap semangat! +2 ⚡\nJawaban: {correct_answer}\n\n"
 
     result_text += f"📖 Pembahasan:\n{pembahasan}"
     await update.message.reply_text(result_text)
 
     # Update bank soal jika mode latihan/ulang
+    # BENAR=True (keluar dari /ulang), SEBAGIAN/SALAH=False (tetap muncul di /ulang)
     if state.get("mode") in ("latihan", "ulang"):
         soal_ids = state.get("latihan_soal_ids", [])
         if current_q < len(soal_ids):
-            await asyncio.to_thread(update_result, chat_id, soal_ids[current_q], is_correct)
+            await asyncio.to_thread(update_result, chat_id, soal_ids[current_q], verdict == "BENAR")
 
     state["current_question"] += 1
     save_all_states(session_state)
