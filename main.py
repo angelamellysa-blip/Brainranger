@@ -8,6 +8,7 @@ from utils.points import get_today_points, get_total_points, get_all_today, get_
 from handlers.pomodoro import (
     handle_mulai, handle_photo, handle_selesai,
     handle_lanjut, handle_skip, handle_answer,
+    handle_latihan, handle_ulang,
     handle_sticker, get_state, init_session
 )
 
@@ -182,6 +183,8 @@ def main():
     app.add_handler(CommandHandler("selesai",       handle_selesai))
     app.add_handler(CommandHandler("lanjut",        handle_lanjut))
     app.add_handler(CommandHandler("skip",          handle_skip))
+    app.add_handler(CommandHandler("latihan",       handle_latihan))
+    app.add_handler(CommandHandler("ulang",         handle_ulang))
     app.add_handler(CommandHandler("testreminder",  test_reminder))
     app.add_handler(MessageHandler(filters.PHOTO,       handle_photo))
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))

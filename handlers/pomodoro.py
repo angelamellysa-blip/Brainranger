@@ -9,6 +9,7 @@ from handlers.ai_processor import process_photos, evaluate_answer
 from utils.message_splitter import split_message, to_html, strip_markdown
 from utils.state_manager import load_all_states, save_all_states
 from utils.points import add_points, update_streak, get_streak, get_total_points, get_rank
+from utils.bank_soal import save_session, get_mapel_list, get_random_soal, get_salah_soal, update_result, get_stats
 from handlers.sheets import log_session
 from handlers.svg_generator import needs_illustration, generate_svg, generate_illustration, svg_to_png
 
@@ -39,6 +40,9 @@ def init_session(chat_id):
         "current_question": 0,
         "correct_count": 0,
         "points_at_start": 0,
+        "mode": "normal",             # "normal" | "latihan" | "ulang"
+        "waiting_for_mapel_pick": False,
+        "latihan_soal_ids": [],       # soal IDs dari bank untuk update hasil
     }
     save_all_states(session_state)
 
@@ -291,6 +295,12 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     state = get_state(chat_id)
+
+    # Handle pilihan mapel saat /latihan
+    if state.get("waiting_for_mapel_pick"):
+        await handle_mapel_pick(update, context, state, ranger)
+        return
+
     if not state.get("awaiting_answers"):
         return
 
@@ -333,6 +343,12 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result_text += f"📖 Pembahasan:\n{pembahasan}"
     await update.message.reply_text(result_text)
 
+    # Update bank soal jika mode latihan/ulang
+    if state.get("mode") in ("latihan", "ulang"):
+        soal_ids = state.get("latihan_soal_ids", [])
+        if current_q < len(soal_ids):
+            await asyncio.to_thread(update_result, chat_id, soal_ids[current_q], is_correct)
+
     state["current_question"] += 1
     save_all_states(session_state)
 
@@ -345,43 +361,182 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         state["session_logged"] = True
         streak, longest_streak = update_streak(chat_id)
-        await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"], streak, longest_streak, state.get("topic", ""))
+        topik = state.get("topic", "")
 
-        new_total = get_total_points(chat_id)
-        old_total = state.get("points_at_start", 0)
-        old_rank  = get_rank(old_total)
-        new_rank  = get_rank(new_total)
-
-        await update.message.reply_text(
-            f"{ranger['emoji']} MISI SELESAI, {ranger['name']}! ⚡\n\n"
-            f"Soal benar: {correct}/{total_q}\n"
-            f"Power hari ini: +{state['points_today']} ⚡\n"
-            f"Total power: {new_total} ⚡\n\n"
-            f"{ranger['ranger']} makin kuat! 🔥"
+        # Simpan soal ke bank soal
+        await asyncio.to_thread(
+            save_session,
+            chat_id, topik,
+            state["questions"], state["keys"], state["pembahasan"]
         )
 
-        if old_rank != new_rank:
+        await asyncio.to_thread(log_session, ranger, correct, total_q, state["points_today"], streak, longest_streak, topik)
+
+        mode = state.get("mode", "normal")
+
+        if mode in ("latihan", "ulang"):
+            # Selesai latihan/ulang — tidak notif Angela, tidak log sheets
+            label = "LATIHAN" if mode == "latihan" else "ULANG SOAL"
             await update.message.reply_text(
-                f"🎉 LEVEL UP, {ranger['name']}!\n\n"
-                f"{old_rank[0]} {old_rank[1]}\n"
-                f"     ↓\n"
-                f"{new_rank[0]} {new_rank[1]}\n\n"
-                f"Pencapaian baru! Terus pertahankan! 💪"
+                f"🎯 {label} SELESAI!\n\n"
+                f"Benar: {correct}/{total_q}\n"
+                f"Power: +{state['points_today']} ⚡\n\n"
+                f"Ketik /latihan untuk latihan lagi atau /ulang untuk soal yang masih salah!"
             )
+            await send_celebration(context.bot, chat_id)
+        else:
+            # Sesi normal
+            new_total = get_total_points(chat_id)
+            old_total = state.get("points_at_start", 0)
+            old_rank  = get_rank(old_total)
+            new_rank  = get_rank(new_total)
 
-        await send_celebration(context.bot, chat_id)
-
-        await context.bot.send_message(
-            chat_id=PARENT_CHAT_ID,
-            text=(
-                f"{ranger['emoji']} {ranger['name']} ({ranger['ranger']}) "
-                f"selesai belajar! ✅\n"
+            await update.message.reply_text(
+                f"{ranger['emoji']} MISI SELESAI, {ranger['name']}! ⚡\n\n"
                 f"Soal benar: {correct}/{total_q}\n"
-                f"Power: +{state['points_today']} ⚡"
+                f"Power hari ini: +{state['points_today']} ⚡\n"
+                f"Total power: {new_total} ⚡\n\n"
+                f"{ranger['ranger']} makin kuat! 🔥"
             )
-        )
+
+            if old_rank != new_rank:
+                await update.message.reply_text(
+                    f"🎉 LEVEL UP, {ranger['name']}!\n\n"
+                    f"{old_rank[0]} {old_rank[1]}\n"
+                    f"     ↓\n"
+                    f"{new_rank[0]} {new_rank[1]}\n\n"
+                    f"Pencapaian baru! Terus pertahankan! 💪"
+                )
+
+            await send_celebration(context.bot, chat_id)
+
+            await context.bot.send_message(
+                chat_id=PARENT_CHAT_ID,
+                text=(
+                    f"{ranger['emoji']} {ranger['name']} ({ranger['ranger']}) "
+                    f"selesai belajar! ✅\n"
+                    f"Soal benar: {correct}/{total_q}\n"
+                    f"Power: +{state['points_today']} ⚡"
+                )
+            )
     else:
         await send_next_question(context.bot, chat_id, state, ranger)
+
+# ── /latihan ─────────────────────────────────────────
+async def handle_latihan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    ranger  = get_ranger(chat_id)
+    if not ranger:
+        return
+
+    mapel_list = get_mapel_list(chat_id)
+    if not mapel_list:
+        await update.message.reply_text(
+            f"{ranger['emoji']} Bank soal kamu masih kosong!\n\n"
+            f"Selesaikan minimal 1 sesi belajar dulu, baru bisa latihan. 💪"
+        )
+        return
+
+    state = get_state(chat_id)
+    state["mode"] = "latihan"
+    state["waiting_for_mapel_pick"] = True
+    state["awaiting_answers"] = False
+    save_all_states(session_state)
+
+    stats = get_stats(chat_id)
+    msg = (
+        f"🎯 Mode Latihan — {ranger['name']}\n"
+        f"Bank soal: {stats['total']} soal | Belum dicoba: {stats['belum_dicoba']}\n\n"
+        f"Pilih mata pelajaran (ketik nomornya):\n\n"
+        f"0. Semua mapel (random)\n"
+    )
+    mapel_options = list(mapel_list.items())
+    for i, (mapel, count) in enumerate(mapel_options, start=1):
+        msg += f"{i}. {mapel} ({count} soal)\n"
+
+    context.user_data["mapel_options"] = mapel_options
+    await update.message.reply_text(msg)
+
+# ── /ulang ────────────────────────────────────────────
+async def handle_ulang(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    ranger  = get_ranger(chat_id)
+    if not ranger:
+        return
+
+    salah_list = get_salah_soal(chat_id)
+    if not salah_list:
+        await update.message.reply_text(
+            f"{ranger['emoji']} Tidak ada soal yang salah di bank soal!\n\n"
+            f"Semua soal sudah pernah dijawab benar 🎉\n"
+            f"Ketik /latihan untuk latihan soal random."
+        )
+        return
+
+    state = get_state(chat_id)
+    state["mode"] = "ulang"
+    state["awaiting_answers"] = True
+    state["waiting_for_mapel_pick"] = False
+    state["current_question"] = 0
+    state["correct_count"] = 0
+    state["points_today"] = 0
+    state["questions"]  = [s["soal"]      for s in salah_list]
+    state["keys"]       = [s["kunci"]     for s in salah_list]
+    state["pembahasan"] = [s["pembahasan"] for s in salah_list]
+    state["latihan_soal_ids"] = [s["id"]  for s in salah_list]
+    save_all_states(session_state)
+
+    await update.message.reply_text(
+        f"🔄 Mengulang soal yang salah — {ranger['name']}\n\n"
+        f"Ada {len(salah_list)} soal yang perlu diulang.\n"
+        f"Jawab satu per satu ya!"
+    )
+    await send_next_question(context.bot, chat_id, state, ranger)
+
+# ── Handle pilihan mapel saat /latihan ───────────────
+async def handle_mapel_pick(update: Update, context: ContextTypes.DEFAULT_TYPE, state, ranger):
+    chat_id = update.effective_chat.id
+    text    = update.message.text.strip()
+
+    mapel_options = context.user_data.get("mapel_options", [])
+
+    try:
+        pick = int(text)
+    except ValueError:
+        await update.message.reply_text("Ketik nomor yang tersedia ya!")
+        return
+
+    if pick == 0:
+        mapel = "Semua"
+    elif 1 <= pick <= len(mapel_options):
+        mapel = mapel_options[pick - 1][0]
+    else:
+        await update.message.reply_text("Nomor tidak tersedia, coba lagi!")
+        return
+
+    soal_list = get_random_soal(chat_id, mapel if mapel != "Semua" else None, count=10)
+    if not soal_list:
+        await update.message.reply_text(f"Belum ada soal untuk {mapel}.")
+        return
+
+    state["waiting_for_mapel_pick"] = False
+    state["awaiting_answers"]  = True
+    state["current_question"]  = 0
+    state["correct_count"]     = 0
+    state["points_today"]      = 0
+    state["questions"]         = [s["soal"]       for s in soal_list]
+    state["keys"]              = [s["kunci"]      for s in soal_list]
+    state["pembahasan"]        = [s["pembahasan"] for s in soal_list]
+    state["latihan_soal_ids"]  = [s["id"]         for s in soal_list]
+    save_all_states(session_state)
+
+    label = f"Mapel: {mapel}" if mapel != "Semua" else "Semua mapel"
+    await update.message.reply_text(
+        f"🎯 Latihan dimulai! ({label})\n\n"
+        f"Ada {len(soal_list)} soal random dari bank soal kamu.\n"
+        f"Jawab satu per satu ya!"
+    )
+    await send_next_question(context.bot, chat_id, state, ranger)
 
 # ── Kirim apresiasi sticker ───────────────────────────
 async def send_celebration(bot, chat_id):
