@@ -11,7 +11,7 @@ from utils.message_splitter import split_message, to_html, strip_markdown
 from utils.state_manager import load_all_states, save_all_states
 from utils.points import add_points, update_streak, get_streak, get_total_points, get_rank
 from utils.bank_soal import save_session, get_mapel_list, get_random_soal, get_salah_soal, update_result, get_stats, get_weak_topics, UJIAN_SOAL_COUNT
-from handlers.sheets import log_session
+from handlers.sheets import log_session, log_skip
 from handlers.svg_generator import needs_illustration, generate_svg, generate_illustration, svg_to_png
 
 session_state = load_all_states()
@@ -42,6 +42,7 @@ def init_session(chat_id):
         "correct_count": 0,
         "points_at_start": 0,
         "mode": "normal",             # "normal" | "latihan" | "ulang" | "ujian"
+        "waiting_for_skip_reason": False,
         "waiting_for_mapel_pick": False,
         "latihan_soal_ids": [],       # soal IDs dari bank untuk update hasil
         "ujian_results": {},          # {"Matematika": {"benar": 5, "total": 10}, ...}
@@ -107,6 +108,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = await update.message.photo[-1].get_file()
     photo_bytes = await photo.download_as_bytearray()
     state["pending_photos"].append(base64.b64encode(bytes(photo_bytes)).decode("utf-8"))
+    save_all_states(session_state)  # simpan agar foto tidak hilang jika bot restart
 
     count = len(state["pending_photos"])
     await update.message.reply_text(
@@ -320,6 +322,11 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state = get_state(chat_id)
 
+    # Handle alasan skip
+    if state.get("waiting_for_skip_reason"):
+        await handle_skip_reason(update, context, state, ranger)
+        return
+
     # Handle pilihan mapel saat /latihan
     if state.get("waiting_for_mapel_pick"):
         await handle_mapel_pick(update, context, state, ranger)
@@ -434,6 +441,7 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             # Sesi normal — set done, update streak, simpan ke bank & sheets
             state["all_sessions_done"] = True
+            save_all_states(session_state)  # pastikan all_sessions_done tersimpan
             streak, longest_streak = update_streak(chat_id)
             topik = state.get("topic", "")
 
@@ -790,11 +798,41 @@ async def handle_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ranger:
         return
 
+    state = get_state(chat_id)
+
+    # Hentikan sesi apapun yang sedang berjalan
+    state["awaiting_answers"]       = False
+    state["waiting_for_mapel_pick"] = False
+    state["waiting_for_skip_reason"] = True
+    save_all_states(session_state)
+
     await update.message.reply_text(
-        f"{ranger['emoji']} Oke {ranger['name']}, skip hari ini.\n"
-        f"Besok semangat lagi ya! 💪"
+        f"{ranger['emoji']} Oke {ranger['name']}, skip hari ini.\n\n"
+        f"Boleh tulis alasannya? (biar Angela tau 😊)"
     )
+
+# ── Handler alasan skip ───────────────────────────────
+async def handle_skip_reason(update: Update, context: ContextTypes.DEFAULT_TYPE, state, ranger):
+    chat_id = update.effective_chat.id
+    reason  = update.message.text.strip()
+
+    state["waiting_for_skip_reason"] = False
+    state["all_sessions_done"] = True  # Anggap hari ini selesai (skip)
+    save_all_states(session_state)
+
+    await update.message.reply_text(
+        f"📝 Noted! Alasan kamu sudah dicatat.\n\n"
+        f"Semangat besok ya {ranger['name']}! 💪"
+    )
+
     await context.bot.send_message(
         chat_id=PARENT_CHAT_ID,
-        text=f"⚠️ {ranger['name']} ({ranger['ranger']}) skip belajar hari ini."
+        text=(
+            f"⚠️ {ranger['emoji']} {ranger['name']} ({ranger['ranger']}) "
+            f"skip belajar hari ini.\n"
+            f"📝 Alasan: {reason}"
+        )
     )
+
+    # Simpan ke Sheets
+    await asyncio.to_thread(log_skip, ranger, reason)

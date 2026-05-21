@@ -164,6 +164,32 @@ def _update_leaderboard(spreadsheet):
     sheet_lb.clear()
     sheet_lb.update("A1", lb_data)
 
+# ── Log skip harian ──────────────────────────────────────
+def log_skip(ranger, reason):
+    spreadsheet_id = os.getenv("SPREADSHEET_ID")
+    if not spreadsheet_id:
+        print("SPREADSHEET_ID not set, skipping skip log")
+        return
+    try:
+        client = get_sheets_client()
+        spreadsheet = client.open_by_key(spreadsheet_id)
+        now = datetime.now()
+
+        sheet = _get_or_create_sheet(spreadsheet, "Log Skip")
+        header = ["Tanggal", "Nama", "Ranger", "Level", "Alasan", "Jam"]
+        _ensure_header(sheet, header)
+        sheet.append_row([
+            now.strftime("%Y-%m-%d"),
+            ranger["name"],
+            ranger["ranger"],
+            ranger["level"],
+            reason,
+            now.strftime("%H:%M"),
+        ])
+        print(f"Sheets: skip logged {ranger['name']} — {reason}")
+    except Exception as e:
+        print(f"Sheets skip log error: {e}")
+
 # ── Weekly summary (dipanggil tiap Jumat dari main.py) ───
 def get_weekly_summary():
     spreadsheet_id = os.getenv("SPREADSHEET_ID")
