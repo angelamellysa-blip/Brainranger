@@ -42,6 +42,41 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Chat ID kamu: {update.effective_chat.id}"
     )
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if is_parent(chat_id):
+        msg = (
+            "🦸 BrainRanger — Perintah untuk Angela\n\n"
+            "📋 STATUS & MONITORING\n"
+            "/squad — Status real-time 3 Ranger (poin, streak, rank)\n\n"
+            "🔔 REMINDER\n"
+            "/testreminder — Kirim reminder belajar ke semua Ranger sekarang\n\n"
+            "🛠 LAINNYA\n"
+            "/id — Lihat Chat ID kamu\n"
+            "/help — Tampilkan perintah ini\n"
+        )
+    elif get_ranger(chat_id):
+        ranger = get_ranger(chat_id)
+        msg = (
+            f"{ranger['emoji']} BrainRanger — Perintah untuk {ranger['name']}\n\n"
+            "📚 SESI BELAJAR\n"
+            "/mulai — Mulai sesi belajar baru (kirim foto buku)\n"
+            "/selesai — Selesai kirim foto, proses materi\n"
+            "/lanjut — Mulai mengerjakan soal\n"
+            "/skip — Skip belajar hari ini\n\n"
+            "🎯 LATIHAN SOAL\n"
+            "/latihan — Latihan soal dari bank soal (pilih mapel)\n"
+            "/ulang — Ulangi soal yang pernah dijawab salah\n\n"
+            "⚡ POWER & RANK\n"
+            "/power — Lihat poin hari ini dan total power\n\n"
+            "🛠 LAINNYA\n"
+            "/id — Lihat Chat ID kamu\n"
+            "/help — Tampilkan perintah ini\n"
+        )
+    else:
+        msg = "Maaf, kamu tidak terdaftar di BrainRanger."
+    await update.message.reply_text(msg)
+
 async def squad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if not is_parent(chat_id):
@@ -176,6 +211,7 @@ def main():
     )
 
     app.add_handler(CommandHandler("start",         start))
+    app.add_handler(CommandHandler("help",          help_command))
     app.add_handler(CommandHandler("id",            get_id))
     app.add_handler(CommandHandler("squad",         squad))
     app.add_handler(CommandHandler("power",         power))
