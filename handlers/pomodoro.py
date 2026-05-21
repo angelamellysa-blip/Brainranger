@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import datetime
 import os
 import random
 from telegram import Update
@@ -65,7 +66,7 @@ async def handle_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["waiting_for_photo"] = True
     state["current_session"] = 1
     state["points_at_start"] = get_total_points(chat_id)
-    state["session_start"] = str(__import__("datetime").datetime.now())
+    state["session_start"] = str(datetime.datetime.now())
     save_all_states(session_state)
 
     streak, _ = get_streak(chat_id)
@@ -122,7 +123,15 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state = get_state(chat_id)
 
-    # Force reset data lama
+    # Guard dulu sebelum reset apapun
+    if not state.get("waiting_for_photo"):
+        await update.message.reply_text(
+            f"{ranger['emoji']} Tidak ada foto yang sedang menunggu diproses.\n"
+            f"Ketik /mulai untuk mulai sesi belajar baru ya!"
+        )
+        return
+
+    # Reset data lama hanya jika memang sedang dalam mode upload foto
     state["questions"] = []
     state["keys"] = []
     state["pembahasan"] = []
@@ -131,9 +140,6 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["correct_count"] = 0
     state["current_question"] = 0
     state["awaiting_answers"] = False
-
-    if not state.get("waiting_for_photo"):
-        return
 
     photos = state["pending_photos"]
     if not photos:
@@ -234,7 +240,7 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Kalau sudah siap, ketik /lanjut untuk mulai test! 💪"
     )
 
-# ── /lanjut → mulai sesi test ─────────────────────────
+# ── /lanjut → mulai atau resume sesi test ────────────
 async def handle_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     ranger = get_ranger(chat_id)
@@ -250,6 +256,22 @@ async def handle_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    current_q = state.get("current_question", 0)
+    total_soal = len(state["questions"])
+
+    # Resume sesi yang sedang berjalan (misal setelah bot restart)
+    if current_q > 0 and current_q < total_soal:
+        state["awaiting_answers"] = True
+        save_all_states(session_state)
+        await update.message.reply_text(
+            f"↩️ Melanjutkan sesi sebelumnya...\n\n"
+            f"Kamu sudah di soal {current_q + 1}/{total_soal}.\n"
+            f"Jawaban sebelumnya ({current_q} soal) tetap tersimpan! ✅"
+        )
+        await send_next_question(context.bot, chat_id, state, ranger)
+        return
+
+    # Mulai fresh dari soal 1
     state["current_session"] = 2
     state["awaiting_answers"] = True
     state["current_question"] = 0
@@ -257,7 +279,6 @@ async def handle_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["correct_count"] = 0
     save_all_states(session_state)
 
-    total_soal = len(state["questions"])
     await update.message.reply_text(
         f"{ranger['emoji']} Siap ditest! 📝\n\n"
         f"Ada {total_soal} soal yang harus dijawab.\n"
@@ -398,7 +419,6 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Tawarkan mapel berikutnya
             await _show_ujian_mapel_picker(update, context, chat_id, ranger, state)
-            save_all_states(session_state)
             return
 
         elif mode in ("latihan", "ulang"):
@@ -515,6 +535,7 @@ async def handle_ujian(update: Update, context: ContextTypes.DEFAULT_TYPE):
         done_mark = " ✅" if mapel in state["ujian_mapel_done"] else ""
         msg += f"{i}. {mapel} ({jumlah} soal tersedia){done_mark}\n"
 
+    state["mapel_options"] = mapel_options
     context.user_data["mapel_options"] = mapel_options
     await update.message.reply_text(msg)
 
@@ -549,6 +570,7 @@ async def _show_ujian_mapel_picker(update, context, chat_id, ranger, state):
         semua_options.append((mapel, jumlah))
         idx += 1
 
+    state["mapel_options"] = semua_options
     context.user_data["mapel_options"] = semua_options
     await update.message.reply_text(msg)
 
@@ -631,6 +653,7 @@ async def handle_latihan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, (mapel, count) in enumerate(mapel_options, start=1):
         msg += f"{i}. {mapel} ({count} soal)\n"
 
+    state["mapel_options"] = mapel_options
     context.user_data["mapel_options"] = mapel_options
     await update.message.reply_text(msg)
 
@@ -681,7 +704,8 @@ async def handle_mapel_pick(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     chat_id = update.effective_chat.id
     text    = update.message.text.strip()
 
-    mapel_options = context.user_data.get("mapel_options", [])
+    # Fallback ke state jika context.user_data hilang (bot restart)
+    mapel_options = context.user_data.get("mapel_options") or state.get("mapel_options", [])
 
     try:
         pick = int(text)
