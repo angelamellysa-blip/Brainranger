@@ -4,16 +4,25 @@ from datetime import date, timedelta
 
 POINTS_FILE = "points_history.json"
 
+_cache: dict | None = None  # in-memory cache, None = belum di-load
+
 def _load():
+    global _cache
+    if _cache is not None:
+        return _cache
     if os.path.exists(POINTS_FILE):
         try:
             with open(POINTS_FILE, "r") as f:
-                return json.load(f)
+                _cache = json.load(f)
+                return _cache
         except Exception:
-            return {}
-    return {}
+            pass
+    _cache = {}
+    return _cache
 
 def _save(data):
+    global _cache
+    _cache = data  # update cache sebelum tulis disk
     try:
         with open(POINTS_FILE, "w") as f:
             json.dump(data, f)

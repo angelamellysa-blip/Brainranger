@@ -10,7 +10,7 @@ from handlers.pomodoro import (
     handle_mulai, handle_photo, handle_selesai,
     handle_lanjut, handle_skip, handle_answer,
     handle_latihan, handle_ulang, handle_ujian,
-    handle_sticker, get_state, init_session
+    handle_status, handle_sticker, get_state, init_session
 )
 
 logging.basicConfig(
@@ -70,7 +70,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/ulang — Ulangi soal yang pernah dijawab salah\n"
             "/ujian — Simulasi ujian per mapel (soal lebih banyak)\n\n"
             "⚡ POWER & RANK\n"
-            "/power — Lihat poin hari ini dan total power\n\n"
+            "/power — Lihat poin hari ini dan total power\n"
+            "/status — Cek status sesi belajar saat ini\n\n"
             "🛠 LAINNYA\n"
             "/id — Lihat Chat ID kamu\n"
             "/help — Tampilkan perintah ini\n"
@@ -162,13 +163,36 @@ async def check_inactive_rangers(context: ContextTypes.DEFAULT_TYPE):
         session_start = state.get("session_start")
         started_today = bool(session_start and session_start.startswith(str(date.today())))
         if not started_today:
-            belum.append(r)
+            belum.append((cid, r))
+
     if belum:
-        names = "\n".join([f"{r['emoji']} {r['name']} ({r['ranger']})" for r in belum])
+        # Notif Angela
+        names = "\n".join([f"{r['emoji']} {r['name']} ({r['ranger']})" for _, r in belum])
         await context.bot.send_message(
             chat_id=PARENT_CHAT_ID,
             text=f"⚠️ Ranger belum mulai belajar malam ini:\n\n{names}"
         )
+        # Reminder personal ke masing-masing anak + streak warning
+        for cid, r in belum:
+            streak, _ = get_streak(cid)
+            if streak >= 2:
+                streak_warn = (
+                    f"\n\n⚠️ Streak {streak} hari kamu mau putus malam ini!\n"
+                    f"Jangan sampai terputus — belajar sebentar saja sudah cukup! 🔥"
+                )
+            else:
+                streak_warn = ""
+            try:
+                await context.bot.send_message(
+                    chat_id=cid,
+                    text=(
+                        f"{r['emoji']} Hei {r['name']}! Kamu belum belajar hari ini.\n"
+                        f"Masih ada waktu, ketik /mulai sekarang! ⚡"
+                        f"{streak_warn}"
+                    )
+                )
+            except Exception as e:
+                print(f"Gagal kirim inactive reminder ke {r['name']}: {e}")
 
 async def send_reminders(context: ContextTypes.DEFAULT_TYPE):
     from config import RANGERS
@@ -246,6 +270,7 @@ def main():
     app.add_handler(CommandHandler("latihan",       handle_latihan))
     app.add_handler(CommandHandler("ulang",         handle_ulang))
     app.add_handler(CommandHandler("ujian",         handle_ujian))
+    app.add_handler(CommandHandler("status",         handle_status))
     app.add_handler(CommandHandler("testreminder",  test_reminder))
     app.add_handler(MessageHandler(filters.PHOTO,       handle_photo))
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))

@@ -541,6 +541,7 @@ async def handle_ujian(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["ujian_results"]     = {}
     state["ujian_mapel_done"]  = []
     state["ujian_current_mapel"] = ""
+    state["points_today"]      = 0   # reset di awal ujian, akumulasi lintas mapel
     save_all_states(session_state)
 
     msg = (
@@ -555,7 +556,6 @@ async def handle_ujian(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"{i}. {mapel} ({jumlah} soal tersedia){done_mark}\n"
 
     state["mapel_options"] = mapel_options
-    context.user_data["mapel_options"] = mapel_options
     await update.message.reply_text(msg)
 
 # ── Tampilkan mapel picker ujian (setelah selesai 1 mapel) ──
@@ -590,7 +590,6 @@ async def _show_ujian_mapel_picker(update, context, chat_id, ranger, state):
         idx += 1
 
     state["mapel_options"] = semua_options
-    context.user_data["mapel_options"] = semua_options
     await update.message.reply_text(msg)
 
 # ── Rekap akhir ujian ─────────────────────────────────
@@ -610,11 +609,13 @@ async def _send_ujian_recap(update, context, chat_id, ranger, state):
         icon = "✅" if pct >= 70 else "⚠️" if pct >= 40 else "❌"
         lines += f"  {icon} {mapel}: {v['benar']}/{v['total']} ({pct}%)\n"
 
+    total_power = state.get("points_today", 0)
     recap_msg = (
         f"🏆 REKAP UJIAN — {ranger['name']}\n"
         f"━━━━━━━━━━━━━━━\n\n"
         f"{lines}\n"
-        f"Total: {total_benar}/{total_soal} ({pct_total}%)\n\n"
+        f"Total: {total_benar}/{total_soal} ({pct_total}%)\n"
+        f"⚡ Power diraih: +{total_power}\n\n"
     )
     if pct_total >= 80:
         recap_msg += "🌟 Luar biasa! Siap menghadapi ujian!"
@@ -673,7 +674,6 @@ async def handle_latihan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"{i}. {mapel} ({count} soal)\n"
 
     state["mapel_options"] = mapel_options
-    context.user_data["mapel_options"] = mapel_options
     await update.message.reply_text(msg)
 
 # ── /ulang ────────────────────────────────────────────
@@ -723,8 +723,7 @@ async def handle_mapel_pick(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     chat_id = update.effective_chat.id
     text    = update.message.text.strip()
 
-    # Fallback ke state jika context.user_data hilang (bot restart)
-    mapel_options = context.user_data.get("mapel_options") or state.get("mapel_options", [])
+    mapel_options = state.get("mapel_options", [])
 
     try:
         pick = int(text)
@@ -749,11 +748,8 @@ async def handle_mapel_pick(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         await update.message.reply_text("Nomor tidak tersedia, coba lagi!")
         return
 
-    # Tentukan jumlah soal
-    if mode == "ujian":
-        count = UJIAN_SOAL_COUNT.get(ranger["level"], 10)
-    else:
-        count = 10
+    # Jumlah soal adaptive per level (berlaku untuk semua mode)
+    count = UJIAN_SOAL_COUNT.get(ranger["level"], 10)
 
     soal_list = get_random_soal(chat_id, mapel if mapel != "Semua" else None, count=count)
     if not soal_list:
@@ -764,7 +760,8 @@ async def handle_mapel_pick(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     state["awaiting_answers"]  = True
     state["current_question"]  = 0
     state["correct_count"]     = 0
-    state["points_today"]      = 0
+    if mode != "ujian":
+        state["points_today"]  = 0   # ujian: points_today akumulasi lintas mapel
     state["questions"]         = [s["soal"]       for s in soal_list]
     state["keys"]              = [s["kunci"]      for s in soal_list]
     state["pembahasan"]        = [s["pembahasan"] for s in soal_list]
@@ -796,6 +793,77 @@ async def send_celebration(bot, chat_id):
             print(f"Sticker error: {e}")
     # Fallback jika list kosong atau gagal
     await bot.send_message(chat_id=chat_id, text="🎉🏆⚡🌟🎊💥🔥👑")
+
+# ── /status ───────────────────────────────────────────
+async def handle_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    ranger  = get_ranger(chat_id)
+    if not ranger:
+        return
+
+    state   = get_state(chat_id)
+    mode    = state.get("mode", "normal")
+    mode_label = {
+        "normal":  "Sesi Belajar",
+        "latihan": "Latihan",
+        "ulang":   "Ulang Soal",
+        "ujian":   "Ujian",
+    }.get(mode, mode)
+
+    if state.get("all_sessions_done") and not state.get("waiting_for_skip_reason"):
+        from utils.points import get_today_points
+        today  = get_today_points(chat_id)
+        streak, _ = get_streak(chat_id)
+        await update.message.reply_text(
+            f"{ranger['emoji']} Status {ranger['name']}\n\n"
+            f"✅ Belajar hari ini sudah selesai!\n"
+            f"⚡ Poin hari ini: +{today}\n"
+            f"🔥 Streak: {streak} hari\n\n"
+            f"Ketik /latihan atau /ujian untuk latihan tambahan!"
+        )
+    elif state.get("awaiting_answers"):
+        current_q = state.get("current_question", 0)
+        total_q   = len(state.get("questions", []))
+        correct   = state.get("correct_count", 0)
+        pts       = state.get("points_today", 0)
+        mapel_info = f" — {state.get('ujian_current_mapel', '')}" if mode == "ujian" else ""
+        await update.message.reply_text(
+            f"{ranger['emoji']} Status {ranger['name']}\n\n"
+            f"📝 Mode: {mode_label}{mapel_info}\n"
+            f"❓ Soal: {current_q}/{total_q}\n"
+            f"✅ Benar: {correct}\n"
+            f"⚡ Poin sesi ini: +{pts}\n\n"
+            f"Ketik jawabanmu untuk lanjut!"
+        )
+    elif state.get("waiting_for_photo"):
+        count = len(state.get("pending_photos", []))
+        await update.message.reply_text(
+            f"{ranger['emoji']} Status {ranger['name']}\n\n"
+            f"📸 Upload foto ({count} foto diterima)\n"
+            f"Kirim lebih banyak foto atau ketik /selesai"
+        )
+    elif state.get("questions") and not state.get("awaiting_answers"):
+        total_q = len(state.get("questions", []))
+        await update.message.reply_text(
+            f"{ranger['emoji']} Status {ranger['name']}\n\n"
+            f"✅ Materi sudah diproses ({total_q} soal siap)\n"
+            f"Ketik /lanjut untuk mulai mengerjakan soal!"
+        )
+    elif state.get("waiting_for_mapel_pick"):
+        await update.message.reply_text(
+            f"{ranger['emoji']} Status {ranger['name']}\n\n"
+            f"📋 Menunggu pilihan mapel\n"
+            f"Ketik nomor mapel yang ingin dikerjakan!"
+        )
+    else:
+        streak, _ = get_streak(chat_id)
+        streak_str = f"🔥 Streak: {streak} hari" if streak > 0 else "💪 Belum ada streak"
+        await update.message.reply_text(
+            f"{ranger['emoji']} Status {ranger['name']}\n\n"
+            f"😴 Belum mulai belajar hari ini.\n"
+            f"{streak_str}\n\n"
+            f"Ketik /mulai untuk mulai! ⚡"
+        )
 
 # ── Capture sticker file_id (untuk setup CELEBRATION_STICKERS) ──
 async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):

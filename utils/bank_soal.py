@@ -4,7 +4,8 @@ import random
 import hashlib
 from datetime import date
 
-BANK_FILE = "bank_soal.json"
+BANK_FILE    = "bank_soal.json"
+MAX_BANK_SOAL = 300  # max soal tersimpan per user (FIFO pruning)
 
 _cache: dict | None = None  # in-memory cache, None = belum di-load
 
@@ -64,6 +65,12 @@ def save_session(chat_id, topik, soal_list, kunci_list, pembahasan_list):
             "last_benar":  None,
         })
         added += 1
+
+    # Pruning: buang soal paling lama jika melebihi MAX_BANK_SOAL
+    if len(data[key]) > MAX_BANK_SOAL:
+        removed = len(data[key]) - MAX_BANK_SOAL
+        data[key] = data[key][-MAX_BANK_SOAL:]
+        print(f"Bank soal: pruned {removed} soal lama untuk {chat_id}")
 
     _save(data)
     print(f"Bank soal: +{added} soal baru untuk {chat_id} (mapel: {mapel})")
