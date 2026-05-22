@@ -10,7 +10,7 @@ from handlers.pomodoro import (
     handle_mulai, handle_photo, handle_selesai,
     handle_lanjut, handle_skip, handle_answer,
     handle_latihan, handle_ulang, handle_ujian,
-    handle_status, handle_sticker, get_state, init_session
+    handle_status, handle_bankinfo, handle_sticker, get_state, init_session
 )
 
 logging.basicConfig(
@@ -251,6 +251,13 @@ async def test_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await send_reminders(context)
 
+async def restart_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_parent(update.effective_chat.id):
+        return
+    await update.message.reply_text("🔄 Restarting BrainRanger... tunggu beberapa detik ya!")
+    import os, sys
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
 def main():
     app = (
         Application.builder()
@@ -271,7 +278,9 @@ def main():
     app.add_handler(CommandHandler("ulang",         handle_ulang))
     app.add_handler(CommandHandler("ujian",         handle_ujian))
     app.add_handler(CommandHandler("status",         handle_status))
+    app.add_handler(CommandHandler("bankinfo",       handle_bankinfo))
     app.add_handler(CommandHandler("testreminder",  test_reminder))
+    app.add_handler(CommandHandler("restart",       restart_bot))
     app.add_handler(MessageHandler(filters.PHOTO,       handle_photo))
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     app.add_handler(MessageHandler(

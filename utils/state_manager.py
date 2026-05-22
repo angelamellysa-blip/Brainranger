@@ -1,7 +1,8 @@
 import json
 import os
 
-STATE_FILE = "session_states.json"
+_BASE_DIR  = os.environ.get("DATA_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STATE_FILE = os.path.join(_BASE_DIR, "session_states.json")
 
 def load_all_states():
     if os.path.exists(STATE_FILE):

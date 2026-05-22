@@ -4,7 +4,8 @@ import random
 import hashlib
 from datetime import date
 
-BANK_FILE    = "bank_soal.json"
+_BASE_DIR = os.environ.get("DATA_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BANK_FILE = os.path.join(_BASE_DIR, "bank_soal.json")
 MAX_BANK_SOAL = 300  # max soal tersimpan per user (FIFO pruning)
 
 _cache: dict | None = None  # in-memory cache, None = belum di-load
@@ -34,6 +35,10 @@ def _save(data):
 
 def _soal_id(soal_text):
     return hashlib.md5(soal_text.encode()).hexdigest()[:8]
+
+def compute_soal_ids(soal_list):
+    """Return list of IDs untuk soal_list — dipakai handle_selesai sebelum sesi jawab."""
+    return [_soal_id(s) for s in soal_list]
 
 # ── Simpan soal dari sesi ke bank ────────────────────
 def save_session(chat_id, topik, soal_list, kunci_list, pembahasan_list):
@@ -115,6 +120,7 @@ def get_salah_soal(chat_id, mapel=None):
 # ── Update hasil jawaban ──────────────────────────────
 def update_result(chat_id, soal_id, benar):
     data = _load()
+    found = False
     for s in data.get(str(chat_id), []):
         if s["id"] == soal_id:
             if benar:
@@ -122,7 +128,10 @@ def update_result(chat_id, soal_id, benar):
             else:
                 s["salah_count"] += 1
             s["last_benar"] = benar
+            found = True
             break
+    if not found:
+        print(f"update_result WARNING: soal_id '{soal_id}' tidak ditemukan untuk {chat_id}")
     _save(data)
 
 # ── Statistik bank soal ───────────────────────────────

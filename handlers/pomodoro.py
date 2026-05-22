@@ -10,7 +10,7 @@ from handlers.ai_processor import process_photos, evaluate_answer
 from utils.message_splitter import split_message, to_html, strip_markdown
 from utils.state_manager import load_all_states, save_all_states
 from utils.points import add_points, update_streak, get_streak, get_total_points, get_rank
-from utils.bank_soal import save_session, get_mapel_list, get_random_soal, get_salah_soal, update_result, get_stats, get_weak_topics, UJIAN_SOAL_COUNT
+from utils.bank_soal import save_session, compute_soal_ids, get_mapel_list, get_random_soal, get_salah_soal, update_result, get_stats, get_weak_topics, UJIAN_SOAL_COUNT
 from handlers.sheets import log_session, log_skip
 from handlers.svg_generator import needs_illustration, generate_svg, generate_illustration, svg_to_png
 
@@ -189,6 +189,18 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["waiting_for_photo"] = False
     state["pending_photos"] = []
     state["active"] = True
+
+    # Simpan soal ke bank SEKARANG (sebelum sesi jawab) supaya update_result bisa jalan
+    topik_bank = result.get("topik", "")
+    try:
+        await asyncio.to_thread(
+            save_session, chat_id, topik_bank,
+            result["soal"], result["kunci"], result["pembahasan"]
+        )
+    except Exception as e:
+        print(f"save_session error (handle_selesai): {e}")
+    # Selalu set IDs — meski save_session gagal, soal mungkin sudah ada di bank (dedup)
+    state["latihan_soal_ids"] = compute_soal_ids(result["soal"])
     save_all_states(session_state)
 
     # ── Kirim rangkuman text ──────────────────────────
@@ -393,12 +405,14 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result_text += f"📖 Pembahasan:\n{pembahasan}"
     await update.message.reply_text(result_text)
 
-    # Update bank soal jika mode latihan/ulang/ujian
+    # Update bank soal untuk SEMUA mode (termasuk normal)
     # BENAR=True (keluar dari /ulang), SEBAGIAN/SALAH=False (tetap muncul di /ulang)
-    if state.get("mode") in ("latihan", "ulang", "ujian"):
-        soal_ids = state.get("latihan_soal_ids", [])
-        if current_q < len(soal_ids):
+    soal_ids = state.get("latihan_soal_ids", [])
+    if soal_ids and current_q < len(soal_ids):
+        try:
             await asyncio.to_thread(update_result, chat_id, soal_ids[current_q], verdict == "BENAR")
+        except Exception as e:
+            print(f"update_result error soal {current_q}: {e}")
 
     state["current_question"] += 1
     save_all_states(session_state)
@@ -450,17 +464,13 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             await send_celebration(context.bot, chat_id)
         else:
-            # Sesi normal — set done, update streak, simpan ke bank & sheets
+            # Sesi normal — set done, update streak, log ke sheets
+            # (save_session sudah dipanggil di handle_selesai sebelum sesi jawab)
             state["all_sessions_done"] = True
             save_all_states(session_state)  # pastikan all_sessions_done tersimpan
             streak, longest_streak = update_streak(chat_id)
             topik = state.get("topic", "")
 
-            await asyncio.to_thread(
-                save_session,
-                chat_id, topik,
-                state["questions"], state["keys"], state["pembahasan"]
-            )
             asyncio.create_task(asyncio.to_thread(
                 log_session, ranger, correct, total_q,
                 state["points_today"], streak, longest_streak, topik
@@ -685,11 +695,28 @@ async def handle_ulang(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     salah_list = get_salah_soal(chat_id)
     if not salah_list:
-        await update.message.reply_text(
-            f"{ranger['emoji']} Tidak ada soal yang salah di bank soal!\n\n"
-            f"Semua soal sudah pernah dijawab benar 🎉\n"
-            f"Ketik /latihan untuk latihan soal random."
-        )
+        stats = get_stats(chat_id)
+        if stats["total"] == 0:
+            # Bank soal belum ada sama sekali
+            await update.message.reply_text(
+                f"{ranger['emoji']} Bank soal masih kosong!\n\n"
+                f"Selesaikan minimal 1 sesi belajar dulu, baru bisa pakai /ulang. 💪"
+            )
+        elif stats["belum_dicoba"] == stats["total"]:
+            # Semua soal ada tapi belum pernah dicoba (sesi lama sebelum tracking aktif)
+            await update.message.reply_text(
+                f"{ranger['emoji']} Belum ada soal yang tercatat salah.\n\n"
+                f"Bank soal punya {stats['total']} soal tapi belum ada riwayat jawaban.\n"
+                f"Lakukan sesi belajar baru (/mulai) dan jawab beberapa soal salah, "
+                f"baru /ulang bisa dipakai! 💪"
+            )
+        else:
+            # Ada soal, sudah pernah dicoba, tapi semua benar
+            await update.message.reply_text(
+                f"{ranger['emoji']} Tidak ada soal yang salah!\n\n"
+                f"Semua soal yang pernah dicoba sudah dijawab benar 🎉\n"
+                f"Ketik /latihan untuk latihan soal random."
+            )
         return
 
     # Batasi jumlah soal ulang sesuai level
@@ -864,6 +891,33 @@ async def handle_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{streak_str}\n\n"
             f"Ketik /mulai untuk mulai! ⚡"
         )
+
+# ── /bankinfo — diagnosa bank soal (debug) ───────────
+async def handle_bankinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    ranger  = get_ranger(chat_id)
+    if not ranger:
+        return
+
+    from utils.bank_soal import BANK_FILE
+    stats    = get_stats(chat_id)
+    mapels   = get_mapel_list(chat_id)
+    state    = get_state(chat_id)
+    soal_ids = state.get("latihan_soal_ids", [])
+
+    mapel_lines = "\n".join(f"  • {m}: {n} soal" for m, n in mapels.items()) or "  (kosong)"
+    msg = (
+        f"🔧 Bank Info — {ranger['name']}\n\n"
+        f"📁 File: {BANK_FILE}\n\n"
+        f"📊 Statistik:\n"
+        f"  Total soal   : {stats['total']}\n"
+        f"  Salah (False): {stats['salah']}\n"
+        f"  Belum dicoba : {stats['belum_dicoba']}\n"
+        f"  Sudah benar  : {stats['total'] - stats['salah'] - stats['belum_dicoba']}\n\n"
+        f"📚 Per mapel:\n{mapel_lines}\n\n"
+        f"🔑 latihan_soal_ids aktif: {len(soal_ids)} ID"
+    )
+    await update.message.reply_text(msg)
 
 # ── Capture sticker file_id (untuk setup CELEBRATION_STICKERS) ──
 async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):

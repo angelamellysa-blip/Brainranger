@@ -2,7 +2,8 @@ import json
 import os
 from datetime import date, timedelta
 
-POINTS_FILE = "points_history.json"
+_BASE_DIR   = os.environ.get("DATA_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+POINTS_FILE = os.path.join(_BASE_DIR, "points_history.json")
 
 _cache: dict | None = None  # in-memory cache, None = belum di-load
 
