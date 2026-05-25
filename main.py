@@ -258,6 +258,26 @@ async def restart_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import os, sys
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    import traceback
+    tb_str = "".join(traceback.format_exception(
+        type(context.error), context.error, context.error.__traceback__
+    ))
+    logging.error(f"[ERROR HANDLER]\n{tb_str}")
+
+    # Notif ke Angela supaya tahu ada yang error
+    try:
+        error_msg = str(context.error)[:300]
+        update_info = ""
+        if hasattr(update, "effective_chat") and update.effective_chat:
+            update_info = f" (chat: {update.effective_chat.id})"
+        await context.bot.send_message(
+            chat_id=PARENT_CHAT_ID,
+            text=f"⚠️ BrainRanger error{update_info}:\n{error_msg}\n\nBot tetap jalan, bukan crash."
+        )
+    except Exception:
+        pass
+
 def main():
     app = (
         Application.builder()
@@ -282,6 +302,7 @@ def main():
     app.add_handler(CommandHandler("testreminder",  test_reminder))
     app.add_handler(CommandHandler("restart",       restart_bot))
     app.add_handler(MessageHandler(filters.PHOTO,       handle_photo))
+    app.add_error_handler(error_handler)
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND, handle_answer

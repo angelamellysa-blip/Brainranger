@@ -693,7 +693,21 @@ async def handle_ulang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ranger:
         return
 
-    salah_list = get_salah_soal(chat_id)
+    state = get_state(chat_id)
+
+    # Filter berdasarkan mapel yang dipelajari hari ini (jika ada)
+    from datetime import date as _date
+    session_start = state.get("session_start", "")
+    topik_hari_ini = state.get("topic", "")
+    is_today = bool(session_start and session_start.startswith(str(_date.today())))
+
+    if topik_hari_ini and is_today:
+        mapel_filter = topik_hari_ini.split("/")[0].strip() if "/" in topik_hari_ini else topik_hari_ini or None
+    else:
+        mapel_filter = None  # Tidak ada sesi hari ini, tampilkan semua
+
+    salah_list = get_salah_soal(chat_id, mapel=mapel_filter)
+
     if not salah_list:
         stats = get_stats(chat_id)
         if stats["total"] == 0:
@@ -702,8 +716,15 @@ async def handle_ulang(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{ranger['emoji']} Bank soal masih kosong!\n\n"
                 f"Selesaikan minimal 1 sesi belajar dulu, baru bisa pakai /ulang. 💪"
             )
+        elif mapel_filter and get_salah_soal(chat_id):
+            # Ada soal salah tapi di mapel lain, bukan mapel hari ini
+            await update.message.reply_text(
+                f"{ranger['emoji']} Tidak ada soal salah untuk {mapel_filter}!\n\n"
+                f"Semua soal {mapel_filter} yang pernah dicoba sudah benar 🎉\n"
+                f"Ketik /latihan untuk latihan mapel lain."
+            )
         elif stats["belum_dicoba"] == stats["total"]:
-            # Semua soal ada tapi belum pernah dicoba (sesi lama sebelum tracking aktif)
+            # Semua soal ada tapi belum pernah dicoba
             await update.message.reply_text(
                 f"{ranger['emoji']} Belum ada soal yang tercatat salah.\n\n"
                 f"Bank soal punya {stats['total']} soal tapi belum ada riwayat jawaban.\n"
@@ -738,8 +759,9 @@ async def handle_ulang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_all_states(session_state)
 
     sisa_msg = f" ({total_salah - limit} soal salah lainnya bisa diulang berikutnya)" if total_salah > limit else ""
+    mapel_label = f" — {mapel_filter}" if mapel_filter else " — semua mapel"
     await update.message.reply_text(
-        f"🔄 Mengulang soal yang salah — {ranger['name']}\n\n"
+        f"🔄 Mengulang soal yang salah{mapel_label}\n\n"
         f"Ada {len(salah_list)} soal yang perlu diulang.{sisa_msg}\n"
         f"Jawab satu per satu ya!"
     )
