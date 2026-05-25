@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import datetime
+from datetime import date as _date
 import os
 import random
 from telegram import Update
@@ -11,7 +12,11 @@ from utils.doc_extractor import extract_document
 from utils.message_splitter import split_message, to_html, strip_markdown
 from utils.state_manager import load_all_states, save_all_states
 from utils.points import add_points, update_streak, get_streak, get_total_points, get_rank
-from utils.bank_soal import save_session, compute_soal_ids, get_mapel_list, get_random_soal, get_salah_soal, update_result, get_stats, get_weak_topics, UJIAN_SOAL_COUNT
+from utils.bank_soal import (
+    save_session, compute_soal_ids, get_mapel_list, get_random_soal,
+    get_salah_soal, update_result, get_stats, get_weak_topics,
+    UJIAN_SOAL_COUNT, BANK_FILE,
+)
 from handlers.sheets import log_session, log_skip
 from handlers.svg_generator import needs_illustration, generate_svg, generate_illustration, svg_to_png
 
@@ -201,8 +206,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "\n\n⚠️ Dokumen terlalu panjang — hanya 6.000 kata pertama yang diproses."
         if result["truncated"] else ""
     )
-    file_type = "PDF" if mime_type == "application/pdf" else "Word"
-    word_count = len(result["text"].split())
+    file_type  = "PDF" if mime_type == "application/pdf" else "Word"
+    word_count = result["word_count"]   # sudah dihitung di extract_document, tidak perlu split lagi
 
     await update.message.reply_text(
         f"✅ {file_type} berhasil dibaca!\n"
@@ -822,7 +827,6 @@ async def handle_ulang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = get_state(chat_id)
 
     # Filter berdasarkan mapel yang dipelajari hari ini (jika ada)
-    from datetime import date as _date
     session_start = state.get("session_start", "")
     topik_hari_ini = state.get("topic", "")
     is_today = bool(session_start and session_start.startswith(str(_date.today())))
@@ -842,8 +846,8 @@ async def handle_ulang(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{ranger['emoji']} Bank soal masih kosong!\n\n"
                 f"Selesaikan minimal 1 sesi belajar dulu, baru bisa pakai /ulang. 💪"
             )
-        elif mapel_filter and get_salah_soal(chat_id):
-            # Ada soal salah tapi di mapel lain, bukan mapel hari ini
+        elif mapel_filter and stats["salah"] > 0:
+            # Ada soal salah di bank, tapi bukan dari mapel hari ini
             await update.message.reply_text(
                 f"{ranger['emoji']} Tidak ada soal salah untuk {mapel_filter}!\n\n"
                 f"Semua soal {mapel_filter} yang pernah dicoba sudah benar 🎉\n"
@@ -1047,7 +1051,6 @@ async def handle_bankinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ranger:
         return
 
-    from utils.bank_soal import BANK_FILE
     stats    = get_stats(chat_id)
     mapels   = get_mapel_list(chat_id)
     state    = get_state(chat_id)

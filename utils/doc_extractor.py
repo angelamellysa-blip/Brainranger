@@ -5,8 +5,10 @@ Digunakan sebagai alternatif input selain foto buku.
 PDF scanned (tidak ada teks) akan dideteksi dan dikembalikan sebagai string kosong.
 """
 
-MAX_PAGES  = 10      # Maksimal halaman PDF yang diproses
-MAX_WORDS  = 6000    # Maksimal kata (potong kalau lebih)
+import io
+
+MAX_PAGES = 10      # Maksimal halaman PDF yang diproses
+MAX_WORDS = 6000    # Maksimal kata (potong kalau lebih)
 
 # ── PDF ──────────────────────────────────────────────────
 def extract_pdf(file_bytes: bytes) -> str:
@@ -16,21 +18,14 @@ def extract_pdf(file_bytes: bytes) -> str:
     """
     try:
         import fitz  # pymupdf
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-        total_pages = len(doc)
-        pages_to_read = min(total_pages, MAX_PAGES)
-
-        texts = []
-        for i in range(pages_to_read):
-            page = doc[i]
-            text = page.get_text("text").strip()
-            if text:
-                texts.append(f"[Halaman {i + 1}]\n{text}")
-
-        doc.close()
-
-        combined = "\n\n".join(texts)
-        return combined
+        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+            pages_to_read = min(len(doc), MAX_PAGES)
+            texts = []
+            for i in range(pages_to_read):
+                text = doc[i].get_text("text").strip()
+                if text:
+                    texts.append(f"[Halaman {i + 1}]\n{text}")
+        return "\n\n".join(texts)
     except Exception as e:
         print(f"extract_pdf error: {e}")
         return ""
@@ -47,67 +42,29 @@ def is_scanned_pdf(text: str) -> bool:
 # ── DOCX ─────────────────────────────────────────────────
 def extract_docx(file_bytes: bytes) -> str:
     """
-    Ekstrak teks dari DOCX (paragraf + tabel).
-    Return string teks, atau "" jika gagal.
+    Ekstrak teks dari DOCX: paragraf biasa + tabel.
+    Gunakan python-docx public API — lebih stabil dari raw XML traversal.
     """
     try:
-        import io
         from docx import Document
-        from docx.oxml.ns import qn
-
         doc = Document(io.BytesIO(file_bytes))
         parts = []
 
-        for element in doc.element.body:
-            tag = element.tag.split("}")[-1] if "}" in element.tag else element.tag
+        # Paragraf
+        for p in doc.paragraphs:
+            if p.text.strip():
+                parts.append(p.text.strip())
 
-            if tag == "p":
-                # Paragraf biasa
-                text = "".join(run.text for run in element.iterchildren(qn("w:r"))
-                               if hasattr(run, "text") and run.text)
-                # fallback: ambil semua text node
-                if not text:
-                    from docx.oxml.ns import nsmap
-                    text = element.text_content() if hasattr(element, "text_content") else ""
-                if text.strip():
-                    parts.append(text.strip())
-
-            elif tag == "tbl":
-                # Tabel: ambil semua sel
-                rows = []
-                for row in element.iterchildren(qn("w:tr")):
-                    cells = []
-                    for cell in row.iterchildren(qn("w:tc")):
-                        cell_text = "".join(
-                            p.text for p in cell.iter()
-                            if hasattr(p, "text") and p.text
-                        )
-                        cells.append(cell_text.strip())
-                    if any(cells):
-                        rows.append(" | ".join(cells))
-                if rows:
-                    parts.append("\n".join(rows))
+        # Tabel
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                if cells:
+                    parts.append(" | ".join(cells))
 
         return "\n".join(parts)
     except Exception as e:
         print(f"extract_docx error: {e}")
-        return ""
-
-
-# ── Fallback DOCX sederhana ───────────────────────────────
-def extract_docx_simple(file_bytes: bytes) -> str:
-    """
-    Fallback extractor DOCX yang lebih simpel — hanya paragraf, tanpa tabel.
-    Dipakai jika extract_docx gagal.
-    """
-    try:
-        import io
-        from docx import Document
-        doc = Document(io.BytesIO(file_bytes))
-        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-        return "\n".join(paragraphs)
-    except Exception as e:
-        print(f"extract_docx_simple error: {e}")
         return ""
 
 
@@ -120,8 +77,7 @@ def truncate_content(text: str, max_words: int = MAX_WORDS) -> tuple[str, bool]:
     words = text.split()
     if len(words) <= max_words:
         return text, False
-    truncated = " ".join(words[:max_words])
-    return truncated, True
+    return " ".join(words[:max_words]), True
 
 
 # ── Main entry point ──────────────────────────────────────
@@ -132,6 +88,7 @@ def extract_document(file_bytes: bytes, mime_type: str) -> dict:
     Return dict:
     {
         "text": str,          # teks hasil ekstrak (sudah di-truncate jika perlu)
+        "word_count": int,    # jumlah kata SEBELUM truncate
         "success": bool,      # True jika ada teks
         "scanned": bool,      # True jika PDF scanned (tidak ada teks)
         "truncated": bool,    # True jika dipotong karena terlalu panjang
@@ -153,21 +110,21 @@ def extract_document(file_bytes: bytes, mime_type: str) -> dict:
             "application/msword",
         ):
             text = extract_docx(file_bytes)
-            if not text.strip():
-                # Coba fallback
-                text = extract_docx_simple(file_bytes)
         else:
             error = f"Tipe file tidak didukung: {mime_type}"
     except Exception as e:
         error = str(e)
         print(f"extract_document error: {e}")
 
-    text, truncated = truncate_content(text.strip()) if text.strip() else ("", False)
+    text = text.strip()
+    word_count = len(text.split()) if text else 0
+    text, truncated = truncate_content(text) if text else ("", False)
 
     return {
-        "text":      text,
-        "success":   bool(text.strip()),
-        "scanned":   scanned,
-        "truncated": truncated,
-        "error":     error,
+        "text":       text,
+        "word_count": word_count,
+        "success":    bool(text),
+        "scanned":    scanned,
+        "truncated":  truncated,
+        "error":      error,
     }

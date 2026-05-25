@@ -1,6 +1,9 @@
 import logging
 import asyncio
 import datetime
+import os
+import sys
+import traceback
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from config import TELEGRAM_BOT_TOKEN, PARENT_CHAT_ID, REMINDER_HOUR, REMINDER_MINUTE, DIGEST_HOUR, DIGEST_MINUTE, get_ranger, is_ranger, is_parent
@@ -255,11 +258,9 @@ async def restart_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_parent(update.effective_chat.id):
         return
     await update.message.reply_text("🔄 Restarting BrainRanger... tunggu beberapa detik ya!")
-    import os, sys
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    import traceback
     tb_str = "".join(traceback.format_exception(
         type(context.error), context.error, context.error.__traceback__
     ))
