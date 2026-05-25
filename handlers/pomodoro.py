@@ -6,7 +6,8 @@ import random
 from telegram import Update
 from telegram.ext import ContextTypes
 from config import get_ranger, PARENT_CHAT_ID
-from handlers.ai_processor import process_photos, evaluate_answer
+from handlers.ai_processor import process_photos, process_text_content, evaluate_answer
+from utils.doc_extractor import extract_document
 from utils.message_splitter import split_message, to_html, strip_markdown
 from utils.state_manager import load_all_states, save_all_states
 from utils.points import add_points, update_streak, get_streak, get_total_points, get_rank
@@ -47,6 +48,8 @@ def init_session(chat_id):
         "latihan_soal_ids": [],       # soal IDs dari bank untuk update hasil
         "ujian_results": {},          # {"Matematika": {"benar": 5, "total": 10}, ...}
         "ujian_mapel_done": [],       # mapel yang sudah dikerjakan di sesi ujian
+        "pending_document_text": "",  # teks hasil ekstrak PDF/DOCX
+        "document_ready": False,      # True jika dokumen sudah di-upload dan siap proses
     }
     save_all_states(session_state)
 
@@ -116,6 +119,98 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Kirim foto berikutnya atau ketik /selesai kalau sudah semua."
     )
 
+# ── Handler dokumen (PDF / DOCX) ─────────────────────
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    ranger  = get_ranger(chat_id)
+    if not ranger:
+        return
+
+    state = get_state(chat_id)
+    if not state.get("waiting_for_photo"):
+        await update.message.reply_text(
+            f"{ranger['emoji']} Kamu belum mulai sesi belajar.\n"
+            f"Ketik /mulai dulu, baru kirim foto atau dokumen ya!"
+        )
+        return
+
+    doc       = update.message.document
+    mime_type = doc.mime_type or ""
+    file_name = doc.file_name or ""
+
+    # Validasi tipe file
+    allowed_mimes = {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+    }
+    allowed_ext = {".pdf", ".docx", ".doc"}
+    ext = os.path.splitext(file_name.lower())[1]
+
+    if mime_type not in allowed_mimes and ext not in allowed_ext:
+        await update.message.reply_text(
+            f"{ranger['emoji']} Format file tidak didukung.\n\n"
+            f"Yang bisa diupload:\n"
+            f"• 📄 PDF (.pdf)\n"
+            f"• 📝 Word (.docx)\n\n"
+            f"Atau kamu bisa kirim foto buku langsung ya!"
+        )
+        return
+
+    await update.message.reply_text(
+        f"{ranger['emoji']} Dokumen diterima! Sedang membaca isi file... ⏳"
+    )
+
+    # Download file
+    try:
+        tg_file    = await doc.get_file()
+        file_bytes = await tg_file.download_as_bytearray()
+    except Exception as e:
+        await update.message.reply_text(
+            f"Gagal download file: {str(e)}\n"
+            f"Coba kirim ulang atau pakai foto saja ya!"
+        )
+        return
+
+    # Extract teks
+    result = extract_document(bytes(file_bytes), mime_type or f"application/{ext.lstrip('.')}")
+
+    if result["scanned"]:
+        await update.message.reply_text(
+            f"{ranger['emoji']} PDF ini sepertinya hasil scan (tidak ada teks).\n\n"
+            f"Untuk PDF scan, gunakan foto halaman buku langsung ya!\n"
+            f"Caranya ketik /mulai lalu kirim foto seperti biasa. 📸"
+        )
+        return
+
+    if not result["success"]:
+        err = result.get("error") or "Tidak ada teks yang bisa dibaca"
+        await update.message.reply_text(
+            f"{ranger['emoji']} Gagal membaca dokumen: {err}\n\n"
+            f"Coba format lain atau kirim foto langsung ya!"
+        )
+        return
+
+    # Simpan ke state
+    state["pending_document_text"] = result["text"]
+    state["document_ready"]        = True
+    state["pending_photos"]        = []   # clear foto jika ada
+    save_all_states(session_state)
+
+    truncate_note = (
+        "\n\n⚠️ Dokumen terlalu panjang — hanya 6.000 kata pertama yang diproses."
+        if result["truncated"] else ""
+    )
+    file_type = "PDF" if mime_type == "application/pdf" else "Word"
+    word_count = len(result["text"].split())
+
+    await update.message.reply_text(
+        f"✅ {file_type} berhasil dibaca!\n"
+        f"📊 {word_count:,} kata terdeteksi.{truncate_note}\n\n"
+        f"Ketik /selesai untuk mulai proses materi! ⚡"
+    )
+
+
 # ── /selesai ──────────────────────────────────────────
 async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -143,42 +238,71 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["current_question"] = 0
     state["awaiting_answers"] = False
 
-    photos = state["pending_photos"]
-    if not photos:
+    # ── Branch: dokumen (PDF/DOCX) ───────────────────
+    if state.get("document_ready"):
+        doc_text = state.get("pending_document_text", "")
+        if not doc_text.strip():
+            await update.message.reply_text(
+                "Teks dokumen tidak ditemukan. Coba upload ulang atau pakai foto ya!"
+            )
+            return
+
         await update.message.reply_text(
-            "Belum ada foto! Kirim foto bukumu dulu ya!"
+            f"{ranger['emoji']} Memproses dokumen...\n"
+            f"BrainRanger lagi activate power-mu dari file ini! ⚡"
         )
-        return
 
-    await update.message.reply_text(
-        f"{ranger['emoji']} {len(photos)} foto diterima!\n"
-        f"BrainRanger lagi activate power-mu... tunggu sebentar! ⚡"
-    )
+        try:
+            result = await asyncio.to_thread(process_text_content, doc_text, ranger)
+        except Exception as e:
+            await update.message.reply_text(
+                f"Waduh ada error saat proses dokumen: {str(e)}\n"
+                f"Coba lagi ya!"
+            )
+            return
 
-    photos_bytes = [base64.b64decode(p) if isinstance(p, str) else p for p in photos]
+    # ── Branch: foto ─────────────────────────────────
+    else:
+        photos = state["pending_photos"]
+        if not photos:
+            await update.message.reply_text(
+                f"{ranger['emoji']} Belum ada foto atau dokumen!\n\n"
+                f"Kamu bisa:\n"
+                f"• 📸 Kirim foto halaman buku\n"
+                f"• 📄 Upload file PDF atau Word (.docx)\n\n"
+                f"Lalu ketik /selesai kalau sudah."
+            )
+            return
 
-    try:
-        result = await asyncio.to_thread(process_photos, photos_bytes, ranger)
-    except Exception as e:
         await update.message.reply_text(
-            f"Waduh ada error saat proses foto: {str(e)}\n"
-            f"Coba lagi ya!"
+            f"{ranger['emoji']} {len(photos)} foto diterima!\n"
+            f"BrainRanger lagi activate power-mu... tunggu sebentar! ⚡"
         )
-        return
 
-    # Cek apakah foto tidak terbaca
-    if result["rangkuman"].startswith("FOTO_TIDAK_TERBACA"):
-        await update.message.reply_text(
-            f"{ranger['emoji']} Foto kurang jelas nih!\n\n"
-            f"Tips foto yang bagus:\n"
-            f"• Pastikan cahaya cukup terang\n"
-            f"• Kamera tegak lurus di atas buku\n"
-            f"• Tulisan tidak terlipat atau tertutup\n"
-            f"• Jarak kamera sekitar 20-30cm dari buku\n\n"
-            f"Coba ketik /mulai dan upload foto ulang ya!"
-        )
-        init_session(chat_id)
-        return
+        photos_bytes = [base64.b64decode(p) if isinstance(p, str) else p for p in photos]
+
+        try:
+            result = await asyncio.to_thread(process_photos, photos_bytes, ranger)
+        except Exception as e:
+            await update.message.reply_text(
+                f"Waduh ada error saat proses foto: {str(e)}\n"
+                f"Coba lagi ya!"
+            )
+            return
+
+        # Cek apakah foto tidak terbaca
+        if result["rangkuman"].startswith("FOTO_TIDAK_TERBACA"):
+            await update.message.reply_text(
+                f"{ranger['emoji']} Foto kurang jelas nih!\n\n"
+                f"Tips foto yang bagus:\n"
+                f"• Pastikan cahaya cukup terang\n"
+                f"• Kamera tegak lurus di atas buku\n"
+                f"• Tulisan tidak terlipat atau tertutup\n"
+                f"• Jarak kamera sekitar 20-30cm dari buku\n\n"
+                f"Coba ketik /mulai dan upload foto ulang ya!"
+            )
+            init_session(chat_id)
+            return
 
     # Simpan ke state
     state["questions"] = result["soal"]
@@ -188,6 +312,8 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["topic"] = result.get("topik", "")
     state["waiting_for_photo"] = False
     state["pending_photos"] = []
+    state["pending_document_text"] = ""   # clear setelah diproses
+    state["document_ready"] = False
     state["active"] = True
 
     # Simpan soal ke bank SEKARANG (sebelum sesi jawab) supaya update_result bisa jalan

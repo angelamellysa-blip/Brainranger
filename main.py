@@ -7,7 +7,7 @@ from config import TELEGRAM_BOT_TOKEN, PARENT_CHAT_ID, REMINDER_HOUR, REMINDER_M
 from utils.points import get_today_points, get_total_points, get_all_today, get_streak, get_rank
 from utils.bank_soal import get_weak_topics
 from handlers.pomodoro import (
-    handle_mulai, handle_photo, handle_selesai,
+    handle_mulai, handle_photo, handle_document, handle_selesai,
     handle_lanjut, handle_skip, handle_answer,
     handle_latihan, handle_ulang, handle_ujian,
     handle_status, handle_bankinfo, handle_sticker, get_state, init_session
@@ -61,8 +61,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
             f"{ranger['emoji']} BrainRanger — Perintah untuk {ranger['name']}\n\n"
             "📚 SESI BELAJAR\n"
-            "/mulai — Mulai sesi belajar baru (kirim foto buku)\n"
-            "/selesai — Selesai kirim foto, proses materi\n"
+            "/mulai — Mulai sesi belajar baru (kirim foto, PDF, atau Word)\n"
+            "/selesai — Selesai kirim file, proses materi\n"
             "/lanjut — Mulai mengerjakan soal\n"
             "/skip — Skip belajar hari ini\n\n"
             "🎯 LATIHAN SOAL\n"
@@ -302,6 +302,14 @@ def main():
     app.add_handler(CommandHandler("testreminder",  test_reminder))
     app.add_handler(CommandHandler("restart",       restart_bot))
     app.add_handler(MessageHandler(filters.PHOTO,       handle_photo))
+    app.add_handler(MessageHandler(
+        filters.Document.PDF |
+        filters.Document.MimeType(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ) |
+        filters.Document.MimeType("application/msword"),
+        handle_document
+    ))
     app.add_error_handler(error_handler)
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     app.add_handler(MessageHandler(

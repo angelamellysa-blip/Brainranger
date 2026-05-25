@@ -59,6 +59,38 @@ def process_photos(photo_bytes_list, ranger):
     print(f"process_photos tokens used: {response.usage.output_tokens}/{max_tokens}")
     return parse_response(raw)
 
+def process_text_content(text: str, ranger: dict) -> dict:
+    """
+    Proses materi dari teks (PDF/DOCX) — alternatif process_photos().
+    Input  : plain text hasil ekstrak dokumen
+    Output : dict sama persis dengan process_photos()
+    """
+    max_tokens = MAX_TOKENS.get(ranger["level"], 6000)
+
+    content = [
+        {
+            "type": "text",
+            "text": (
+                f"Berikut adalah materi pelajaran dalam bentuk teks "
+                f"yang diekstrak dari dokumen (PDF/DOCX):\n\n"
+                f"{text}\n\n"
+                f"Proses materi di atas sesuai instruksi."
+            )
+        }
+    ]
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=max_tokens,
+        system=get_system_prompt(ranger["level"]),
+        messages=[{"role": "user", "content": content}]
+    )
+
+    raw = response.content[0].text
+    print(f"process_text_content tokens used: {response.usage.output_tokens}/{max_tokens}")
+    return parse_response(raw)
+
+
 def evaluate_answer(soal, jawaban_anak, kunci_jawaban, level):
     """
     Returns: (verdict, catatan)
