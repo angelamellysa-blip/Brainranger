@@ -15,8 +15,8 @@ Deployment target is Railway.app (configured in `railway.json`). The start comma
 
 Defined in `config.py` and loaded from `.env`:
 - `TELEGRAM_BOT_TOKEN` — Telegram bot token
-- `PARENT_CHAT_ID` — Parent's Telegram chat ID (admin access)
-- `RANGER_BIRU_CHAT_ID`, `RANGER_KUNING_CHAT_ID`, `RANGER_PUTIH_CHAT_ID` — per-child chat IDs
+- `PARENT_CHAT_ID` — Superadmin's Telegram chat ID (bot owner; also seeds the first family's parent)
+- `RANGER_BIRU_CHAT_ID`, `RANGER_KUNING_CHAT_ID`, `RANGER_PUTIH_CHAT_ID` — chat IDs used only to seed the first family into `families.json`
 - `BRAINRANGER_AI_ANT_KEY` — Anthropic API key
 - `GOOGLE_CREDENTIALS_BASE64` — base64-encoded Google Cloud service account JSON (for TTS and Sheets)
 - `SPREADSHEET_ID` — Google Sheets spreadsheet ID for session logging (optional; logging skipped if not set)
@@ -34,7 +34,8 @@ BrainRanger is a Telegram bot for 3 Indonesian students ("Rangers") managed by a
 | File | Role |
 |---|---|
 | `main.py` | Bot entry point; registers all handlers and daily reminder scheduler |
-| `config.py` | Ranger profiles (name, level, focus duration) and helper functions `get_ranger()`, `is_ranger()`, `is_parent()` |
+| `config.py` | Env vars + re-exports family helpers from `utils/families.py` |
+| `utils/families.py` | Multi-tenant family registry (`families.json`): `get_ranger()`, `is_parent()`, `is_superadmin()`, `get_parent_of()`, `add_family()`, `add_ranger()`. One chat_id may belong to only one family; parents may only access their own family's data |
 | `handlers/pomodoro.py` | Full session state machine: `/mulai`, `/selesai`, `/lanjut`, `/skip`, photo collection, answer handling |
 | `handlers/ai_processor.py` | Claude API calls for image processing and answer evaluation; parses Claude's structured output |
 | `handlers/tts.py` | Google Cloud TTS podcast generation; voice varies by education level |
@@ -46,11 +47,13 @@ BrainRanger is a Telegram bot for 3 Indonesian students ("Rangers") managed by a
 
 Session state per chat is stored as a dict in `session_states.json` and accessed via `state_manager.py`. Key state fields: `active`, `waiting_for_photos`, `photos`, `questions`, `answers`, `pembahasan`, `current_question_index`, `points`, `session_number`.
 
-### Ranger profiles
+### Families & Ranger profiles
 
-Three fixed users in `config.py`:
+The bot is multi-tenant: families (one parent + their rangers) live in `families.json` (in `DATA_DIR`), managed by `utils/families.py`. The first family is auto-seeded from env vars on first run:
 - Kirana — Ranger Biru, SMP (junior high), 25-min focus
 - Kanaya — Ranger Kuning, SD Kelas 4, 20-min focus
 - Kiandra — Ranger Putih, SD Kelas 1, 15-min focus
+
+The superadmin (env `PARENT_CHAT_ID`) owns operational commands (`/restart`, `/testreminder`) and sees all families in `/squad`; regular parents only see their own family. Parent notifications (session done, skip, exam recap) go to `get_parent_of(chat_id)`.
 
 All in-app text and AI prompts are in Indonesian.

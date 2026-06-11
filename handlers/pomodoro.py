@@ -6,7 +6,7 @@ import os
 import random
 from telegram import Update
 from telegram.ext import ContextTypes
-from config import get_ranger, PARENT_CHAT_ID
+from config import get_ranger, get_parent_of, SUPERADMIN_CHAT_ID
 from handlers.ai_processor import process_photos, process_text_content, evaluate_answer
 from utils.doc_extractor import extract_document
 from utils.message_splitter import split_message, to_html, strip_markdown
@@ -646,16 +646,18 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"Ketik /ulang untuk latihan soal yang masih salah!"
                 )
 
-            await context.bot.send_message(
-                chat_id=PARENT_CHAT_ID,
-                text=(
-                    f"{ranger['emoji']} {ranger['name']} ({ranger['ranger']}) "
-                    f"selesai belajar! ✅\n"
-                    f"Soal benar: {correct}/{total_q}\n"
-                    f"Power: +{state['points_today']} ⚡"
-                    + (f"\n📊 Topik lemah: {weak[0]['mapel']} ({weak[0]['salah']}x salah)" if weak else "")
+            parent_id = get_parent_of(chat_id) or SUPERADMIN_CHAT_ID
+            if parent_id:
+                await context.bot.send_message(
+                    chat_id=parent_id,
+                    text=(
+                        f"{ranger['emoji']} {ranger['name']} ({ranger['ranger']}) "
+                        f"selesai belajar! ✅\n"
+                        f"Soal benar: {correct}/{total_q}\n"
+                        f"Power: +{state['points_today']} ⚡"
+                        + (f"\n📊 Topik lemah: {weak[0]['mapel']} ({weak[0]['salah']}x salah)" if weak else "")
+                    )
                 )
-            )
     else:
         await send_next_question(context.bot, chat_id, state, ranger)
 
@@ -767,15 +769,17 @@ async def _send_ujian_recap(update, context, chat_id, ranger, state):
 
     await update.message.reply_text(recap_msg)
 
-    # Notif Angela
-    await context.bot.send_message(
-        chat_id=PARENT_CHAT_ID,
-        text=(
-            f"📝 {ranger['emoji']} {ranger['name']} selesai ujian simulasi!\n\n"
-            f"{lines}\n"
-            f"Total: {total_benar}/{total_soal} ({pct_total}%)"
+    # Notif parent keluarga ini
+    parent_id = get_parent_of(chat_id) or SUPERADMIN_CHAT_ID
+    if parent_id:
+        await context.bot.send_message(
+            chat_id=parent_id,
+            text=(
+                f"📝 {ranger['emoji']} {ranger['name']} selesai ujian simulasi!\n\n"
+                f"{lines}\n"
+                f"Total: {total_benar}/{total_soal} ({pct_total}%)"
+            )
         )
-    )
 
     # Reset mode
     state["mode"] = "normal"
@@ -1092,7 +1096,7 @@ async def handle_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"{ranger['emoji']} Oke {ranger['name']}, skip hari ini.\n\n"
-        f"Boleh tulis alasannya? (biar Angela tau 😊)"
+        f"Boleh tulis alasannya? (biar orang tuamu tau 😊)"
     )
 
 # ── Handler alasan skip ───────────────────────────────
@@ -1109,14 +1113,16 @@ async def handle_skip_reason(update: Update, context: ContextTypes.DEFAULT_TYPE,
         f"Semangat besok ya {ranger['name']}! 💪"
     )
 
-    await context.bot.send_message(
-        chat_id=PARENT_CHAT_ID,
-        text=(
-            f"⚠️ {ranger['emoji']} {ranger['name']} ({ranger['ranger']}) "
-            f"skip belajar hari ini.\n"
-            f"📝 Alasan: {reason}"
+    parent_id = get_parent_of(chat_id) or SUPERADMIN_CHAT_ID
+    if parent_id:
+        await context.bot.send_message(
+            chat_id=parent_id,
+            text=(
+                f"⚠️ {ranger['emoji']} {ranger['name']} ({ranger['ranger']}) "
+                f"skip belajar hari ini.\n"
+                f"📝 Alasan: {reason}"
+            )
         )
-    )
 
     # Simpan ke Sheets (fire-and-forget)
     asyncio.create_task(asyncio.to_thread(log_skip, ranger, reason))

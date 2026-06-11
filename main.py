@@ -6,7 +6,12 @@ import sys
 import traceback
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from config import TELEGRAM_BOT_TOKEN, PARENT_CHAT_ID, REMINDER_HOUR, REMINDER_MINUTE, DIGEST_HOUR, DIGEST_MINUTE, get_ranger, is_ranger, is_parent
+from config import (
+    TELEGRAM_BOT_TOKEN, SUPERADMIN_CHAT_ID,
+    REMINDER_HOUR, REMINDER_MINUTE, DIGEST_HOUR, DIGEST_MINUTE,
+    get_ranger, is_ranger, is_parent, is_superadmin,
+    get_parent_name, get_family_rangers, get_all_families, get_all_rangers,
+)
 from utils.points import get_today_points, get_total_points, get_all_today, get_streak, get_rank
 from utils.bank_soal import get_weak_topics
 from handlers.pomodoro import (
@@ -32,9 +37,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Kamu adalah {ranger['ranger']} — siap activate brain power! ⚡"
         )
     elif is_parent(chat_id):
+        nama = get_parent_name(chat_id) or "Bunda/Ayah"
         await update.message.reply_text(
-            "Hei Angela! BrainRanger aktif.\n"
-            "Ketik /squad untuk lihat status 3 Ranger."
+            f"Hei {nama}! BrainRanger aktif.\n"
+            "Ketik /squad untuk lihat status Ranger di keluargamu."
         )
     else:
         await update.message.reply_text(
@@ -49,16 +55,21 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if is_parent(chat_id):
+        nama = get_parent_name(chat_id) or "Orang Tua"
         msg = (
-            "🦸 BrainRanger — Perintah untuk Angela\n\n"
+            f"🦸 BrainRanger — Perintah untuk {nama}\n\n"
             "📋 STATUS & MONITORING\n"
-            "/squad — Status real-time 3 Ranger (poin, streak, rank)\n\n"
-            "🔔 REMINDER\n"
-            "/testreminder — Kirim reminder belajar ke semua Ranger sekarang\n\n"
+            "/squad — Status real-time Ranger di keluargamu (poin, streak, rank)\n\n"
             "🛠 LAINNYA\n"
             "/id — Lihat Chat ID kamu\n"
             "/help — Tampilkan perintah ini\n"
         )
+        if is_superadmin(chat_id):
+            msg += (
+                "\n👑 SUPERADMIN\n"
+                "/testreminder — Kirim reminder belajar ke semua Ranger sekarang\n"
+                "/restart — Restart bot\n"
+            )
     elif get_ranger(chat_id):
         ranger = get_ranger(chat_id)
         msg = (
@@ -83,44 +94,56 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = "Maaf, kamu tidak terdaftar di BrainRanger."
     await update.message.reply_text(msg)
 
+def _ranger_status_block(cid, r):
+    state  = get_state(cid)
+    today  = get_today_points(cid)
+    total  = get_total_points(cid)
+    streak, _ = get_streak(cid)
+    rank_emoji, rank_name = get_rank(total)
+
+    if state.get("all_sessions_done"):
+        correct = state.get("correct_count", 0)
+        total_q = len(state.get("questions", []))
+        status  = f"✅ Selesai ({correct}/{total_q} benar)"
+    elif state.get("active"):
+        status = "🟢 Sedang belajar"
+    else:
+        status = "⚪ Belum mulai"
+
+    streak_str = f"{streak} hari 🔥" if streak >= 3 else f"{streak} hari"
+
+    weak = get_weak_topics(cid, top_n=1)
+    weak_str = f"⚠️ Lemah: {weak[0]['mapel']} ({weak[0]['salah']}x)" if weak else "✨ Belum ada data"
+
+    return (
+        f"{r['emoji']} {r['name']} ({r['ranger']})\n"
+        f"   {status}\n"
+        f"   Hari ini: +{today} ⚡ | Total: {total} ⚡\n"
+        f"   Streak: {streak_str} | {rank_emoji} {rank_name}\n"
+        f"   {weak_str}\n\n"
+    )
+
 async def squad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if not is_parent(chat_id):
         return
-    from config import RANGERS
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
     msg = f"🦸 BrainRanger Squad\n{now.strftime('%d %b %Y, %H:%M')} WIB\n"
     msg += "━━━━━━━━━━━━━━━\n\n"
-    for cid, r in RANGERS.items():
-        if cid == 0:
-            continue
-        state  = get_state(cid)
-        today  = get_today_points(cid)
-        total  = get_total_points(cid)
-        streak, _ = get_streak(cid)
-        rank_emoji, rank_name = get_rank(total)
 
-        if state.get("all_sessions_done"):
-            correct = state.get("correct_count", 0)
-            total_q = len(state.get("questions", []))
-            status  = f"✅ Selesai ({correct}/{total_q} benar)"
-        elif state.get("active"):
-            status = "🟢 Sedang belajar"
-        else:
-            status = "⚪ Belum mulai"
+    if is_superadmin(chat_id):
+        # Superadmin lihat semua keluarga, dikelompokkan per keluarga
+        families = get_all_families()
+        for fam_id, fam in families.items():
+            if len(families) > 1:
+                msg += f"👨‍👩‍👧 {fam.get('parent_name') or fam_id} ({fam_id})\n"
+            for cid, r in fam["rangers"].items():
+                msg += _ranger_status_block(cid, r)
+    else:
+        # Parent biasa HANYA lihat ranger keluarganya sendiri
+        for cid, r in get_family_rangers(chat_id).items():
+            msg += _ranger_status_block(cid, r)
 
-        streak_str = f"{streak} hari 🔥" if streak >= 3 else f"{streak} hari"
-
-        weak = get_weak_topics(cid, top_n=1)
-        weak_str = f"⚠️ Lemah: {weak[0]['mapel']} ({weak[0]['salah']}x)" if weak else "✨ Belum ada data"
-
-        msg += (
-            f"{r['emoji']} {r['name']} ({r['ranger']})\n"
-            f"   {status}\n"
-            f"   Hari ini: +{today} ⚡ | Total: {total} ⚡\n"
-            f"   Streak: {streak_str} | {rank_emoji} {rank_name}\n"
-            f"   {weak_str}\n\n"
-        )
     await update.message.reply_text(msg)
 
 async def power(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -154,27 +177,33 @@ async def power(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def check_inactive_rangers(context: ContextTypes.DEFAULT_TYPE):
-    from config import RANGERS
     from datetime import date
-    belum = []
-    for cid, r in RANGERS.items():
-        if cid == 0:
-            continue
-        state = get_state(cid)
-        if state.get("all_sessions_done"):
-            continue
-        session_start = state.get("session_start")
-        started_today = bool(session_start and session_start.startswith(str(date.today())))
-        if not started_today:
-            belum.append((cid, r))
+    for fam_id, fam in get_all_families().items():
+        belum = []
+        for cid, r in fam["rangers"].items():
+            state = get_state(cid)
+            if state.get("all_sessions_done"):
+                continue
+            session_start = state.get("session_start")
+            started_today = bool(session_start and session_start.startswith(str(date.today())))
+            if not started_today:
+                belum.append((cid, r))
 
-    if belum:
-        # Notif Angela
-        names = "\n".join([f"{r['emoji']} {r['name']} ({r['ranger']})" for _, r in belum])
-        await context.bot.send_message(
-            chat_id=PARENT_CHAT_ID,
-            text=f"⚠️ Ranger belum mulai belajar malam ini:\n\n{names}"
-        )
+        if not belum:
+            continue
+
+        # Notif ke parent keluarga ini saja
+        parent_id = fam.get("parent_chat_id")
+        if parent_id:
+            names = "\n".join([f"{r['emoji']} {r['name']} ({r['ranger']})" for _, r in belum])
+            try:
+                await context.bot.send_message(
+                    chat_id=parent_id,
+                    text=f"⚠️ Ranger belum mulai belajar malam ini:\n\n{names}"
+                )
+            except Exception as e:
+                print(f"Gagal kirim inactive notif ke parent {fam_id}: {e}")
+
         # Reminder personal ke masing-masing anak + streak warning
         for cid, r in belum:
             streak, _ = get_streak(cid)
@@ -198,10 +227,7 @@ async def check_inactive_rangers(context: ContextTypes.DEFAULT_TYPE):
                 print(f"Gagal kirim inactive reminder ke {r['name']}: {e}")
 
 async def send_reminders(context: ContextTypes.DEFAULT_TYPE):
-    from config import RANGERS
-    for chat_id, ranger in RANGERS.items():
-        if chat_id == 0:
-            continue
+    for chat_id, ranger in get_all_rangers().items():
         try:
             await context.bot.send_message(
                 chat_id=chat_id,
@@ -213,10 +239,11 @@ async def send_reminders(context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception as e:
             print(f"Gagal kirim reminder ke {ranger['name']}: {e}")
-    await context.bot.send_message(
-        chat_id=PARENT_CHAT_ID,
-        text="🔔 Reminder belajar sudah dikirim ke semua Ranger!"
-    )
+    if SUPERADMIN_CHAT_ID:
+        await context.bot.send_message(
+            chat_id=SUPERADMIN_CHAT_ID,
+            text="🔔 Reminder belajar sudah dikirim ke semua Ranger!"
+        )
 
 async def send_weekly_summary(context: ContextTypes.DEFAULT_TYPE):
     if datetime.datetime.now().weekday() != 4:  # 4 = Jumat
@@ -234,28 +261,34 @@ async def send_weekly_summary(context: ContextTypes.DEFAULT_TYPE):
             f"   Sesi: {data['sesi']} | Poin: {data['poin']} ⚡\n"
             f"   Rata-rata benar: {avg}%\n\n"
         )
-    await context.bot.send_message(chat_id=PARENT_CHAT_ID, text=msg)
+    if SUPERADMIN_CHAT_ID:
+        await context.bot.send_message(chat_id=SUPERADMIN_CHAT_ID, text=msg)
 
 async def send_digest(context: ContextTypes.DEFAULT_TYPE):
-    from config import RANGERS
     today_points = get_all_today()
-    msg = "📊 Digest Belajar Hari Ini\n\n"
-    for cid, r in RANGERS.items():
-        if cid == 0:
+    # Setiap parent hanya menerima digest anak-anaknya sendiri
+    for fam_id, fam in get_all_families().items():
+        parent_id = fam.get("parent_chat_id")
+        if not parent_id or not fam["rangers"]:
             continue
-        state = get_state(cid)
-        pts = today_points.get(cid, 0)
-        done = "✅ selesai" if state.get("all_sessions_done") else "⏳ belum selesai"
-        msg += f"{r['emoji']} {r['name']}: {done} — {pts} poin ⚡\n"
-    await context.bot.send_message(chat_id=PARENT_CHAT_ID, text=msg)
+        msg = "📊 Digest Belajar Hari Ini\n\n"
+        for cid, r in fam["rangers"].items():
+            state = get_state(cid)
+            pts = today_points.get(cid, 0)
+            done = "✅ selesai" if state.get("all_sessions_done") else "⏳ belum selesai"
+            msg += f"{r['emoji']} {r['name']}: {done} — {pts} poin ⚡\n"
+        try:
+            await context.bot.send_message(chat_id=parent_id, text=msg)
+        except Exception as e:
+            print(f"Gagal kirim digest ke parent {fam_id}: {e}")
 
 async def test_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_parent(update.effective_chat.id):
+    if not is_superadmin(update.effective_chat.id):
         return
     await send_reminders(context)
 
 async def restart_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_parent(update.effective_chat.id):
+    if not is_superadmin(update.effective_chat.id):
         return
     await update.message.reply_text("🔄 Restarting BrainRanger... tunggu beberapa detik ya!")
     os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -266,14 +299,16 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     ))
     logging.error(f"[ERROR HANDLER]\n{tb_str}")
 
-    # Notif ke Angela supaya tahu ada yang error
+    # Notif ke superadmin supaya tahu ada yang error
+    if not SUPERADMIN_CHAT_ID:
+        return
     try:
         error_msg = str(context.error)[:300]
         update_info = ""
         if hasattr(update, "effective_chat") and update.effective_chat:
             update_info = f" (chat: {update.effective_chat.id})"
         await context.bot.send_message(
-            chat_id=PARENT_CHAT_ID,
+            chat_id=SUPERADMIN_CHAT_ID,
             text=f"⚠️ BrainRanger error{update_info}:\n{error_msg}\n\nBot tetap jalan, bukan crash."
         )
     except Exception:

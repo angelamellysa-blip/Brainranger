@@ -3,3 +3,10 @@ __pycache__/
 *.pyc
 credentials.json
 *.mp3
+
+# Data files — berisi chat ID & data belajar keluarga, jangan pernah commit
+families.json
+families.json.*
+session_states.json
+bank_soal.json
+points_history.json
