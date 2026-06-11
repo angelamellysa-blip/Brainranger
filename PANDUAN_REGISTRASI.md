@@ -57,9 +57,12 @@ Si anak (di HP/akun Telegram-nya sendiri):
 
 1. Buka bot BrainRanger, tekan **Start**
 2. Kirim kodenya sebagai pesan biasa: `ANAK-K3WM7P`
+3. Bot menampilkan pilihan warna Ranger (Merah, Hijau, Ungu, Oranye, Biru,
+   Kuning, Putih, Hitam) — anak ketik nomor warna favoritnya
 
-Bot langsung menyambut: anak mendapat warna Ranger otomatis (Merah, Hijau,
-Ungu, dst.) dan bisa langsung ketik `/mulai` untuk sesi belajar pertama.
+Warna yang sudah dipakai kakak/adiknya tidak muncul di pilihan. Setelah pilih
+warna, anak resmi jadi Ranger dan bisa langsung ketik `/mulai` untuk sesi
+belajar pertama.
 
 ---
 

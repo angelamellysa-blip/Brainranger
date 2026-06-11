@@ -17,6 +17,7 @@ from telegram.ext import ContextTypes
 from utils.families import (
     is_parent, is_superadmin, is_ranger,
     create_parent_invite, create_ranger_invite, use_invite,
+    peek_invite, get_available_colors,
     get_family_rangers, get_parent_name,
     MAX_RANGERS_PER_FAMILY, INVITE_TTL_DAYS,
 )
@@ -68,6 +69,12 @@ async def handle_daftar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _register_with_code(update: Update, code: str):
     chat_id = update.effective_chat.id
     tg_name = (update.effective_user.first_name or "").strip()
+    code = code.strip().upper()
+
+    # Kode anak → pilih warna dulu sebelum terdaftar
+    if code.startswith("ANAK"):
+        await _start_color_pick(update, code)
+        return
 
     try:
         result = use_invite(code, chat_id, name=tg_name)
@@ -75,23 +82,83 @@ async def _register_with_code(update: Update, code: str):
         await update.message.reply_text(f"❌ {e}")
         return
 
-    if result["type"] == "parent":
-        await update.message.reply_text(
-            f"🎉 Selamat datang di BrainRanger, {tg_name or 'Bunda/Ayah'}!\n\n"
-            f"Keluargamu sudah terdaftar. Langkah berikutnya:\n"
-            f"1. Ketik /tambahanak untuk mendaftarkan anak\n"
-            f"2. Bot akan kasih kode — minta anak kirim kode itu ke bot ini\n"
-            f"3. Anak langsung bisa mulai belajar dengan /mulai\n\n"
-            f"Kamu akan menerima laporan belajar anak otomatis setiap hari. "
-            f"Ketik /help untuk lihat semua perintah!"
-        )
-    else:
-        p = result["profile"]
-        await update.message.reply_text(
-            f"🎉 Selamat datang, {p['name']}!\n"
-            f"Kamu sekarang adalah {p['emoji']} {p['ranger']}!\n\n"
-            f"Siap activate brain power? Ketik /mulai untuk sesi belajar pertamamu! ⚡"
-        )
+    await update.message.reply_text(
+        f"🎉 Selamat datang di BrainRanger, {tg_name or 'Bunda/Ayah'}!\n\n"
+        f"Keluargamu sudah terdaftar. Langkah berikutnya:\n"
+        f"1. Ketik /tambahanak untuk mendaftarkan anak\n"
+        f"2. Bot akan kasih kode — minta anak kirim kode itu ke bot ini\n"
+        f"3. Anak langsung bisa mulai belajar dengan /mulai\n\n"
+        f"Kamu akan menerima laporan belajar anak otomatis setiap hari. "
+        f"Ketik /help untuk lihat semua perintah!"
+    )
+
+# ── Flow pilih warna (anak) ───────────────────────────────
+def _color_list_msg(colors) -> str:
+    lines = "\n".join(f"{i}. {e} {n}" for i, (n, e) in enumerate(colors, start=1))
+    return f"Pilih warna Ranger kamu! Ketik nomornya:\n\n{lines}"
+
+async def _start_color_pick(update: Update, code: str):
+    chat_id = update.effective_chat.id
+    try:
+        info = peek_invite(code)
+    except ValueError as e:
+        await update.message.reply_text(f"❌ {e}")
+        return
+    if info["type"] != "ranger":
+        await update.message.reply_text("Kode ini untuk orang tua. Pakai: /daftar KODE")
+        return
+
+    colors = get_available_colors(info["family_id"])
+    if not colors:
+        await update.message.reply_text("❌ Keluarga ini sudah penuh.")
+        return
+
+    nama = info["profile"].get("name", "Ranger")
+    _flows[chat_id] = {"step": "color", "code": code, "family_id": info["family_id"]}
+    await update.message.reply_text(
+        f"Hai {nama}! Selamat datang di BrainRanger! 🦸\n\n"
+        + _color_list_msg(colors)
+        + "\n\n(ketik `batal` untuk membatalkan)",
+        parse_mode="Markdown",
+    )
+
+async def _handle_color_pick(update: Update, flow: dict):
+    chat_id = update.effective_chat.id
+    text = (update.message.text or "").strip()
+
+    if text.lower() == "batal":
+        del _flows[chat_id]
+        await update.message.reply_text("Oke, dibatalkan. Kirim kodenya lagi kalau mau daftar ya!")
+        return
+
+    # Refresh daftar warna — bisa berubah kalau saudaranya baru join
+    colors = get_available_colors(flow["family_id"])
+    if not text.isdigit() or not (1 <= int(text) <= len(colors)):
+        await update.message.reply_text("Ketik nomor warnanya ya!\n\n" + _color_list_msg(colors))
+        return
+
+    color_name = colors[int(text) - 1][0]
+    try:
+        result = use_invite(flow["code"], chat_id, color=color_name)
+    except ValueError as e:
+        if "warna" in str(e).lower():
+            # Warna keburu diambil — tawarkan ulang
+            await update.message.reply_text(
+                f"Yah, warna itu baru saja diambil! 😅\n\n"
+                + _color_list_msg(get_available_colors(flow["family_id"]))
+            )
+            return
+        del _flows[chat_id]
+        await update.message.reply_text(f"❌ {e}")
+        return
+
+    del _flows[chat_id]
+    p = result["profile"]
+    await update.message.reply_text(
+        f"🎉 Selamat datang, {p['name']}!\n"
+        f"Kamu sekarang adalah {p['emoji']} {p['ranger']}!\n\n"
+        f"Siap activate brain power? Ketik /mulai untuk sesi belajar pertamamu! ⚡"
+    )
 
 # ── /tambahanak (parent) ──────────────────────────────────
 async def handle_tambahanak(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -121,9 +188,14 @@ async def handle_freeform_text(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     chat_id = update.effective_chat.id
     text = (update.message.text or "").strip()
-
-    # 1. Flow /tambahanak
     flow = _flows.get(chat_id)
+
+    # 1. Flow pilih warna (anak yang sedang join)
+    if flow and flow.get("step") == "color":
+        await _handle_color_pick(update, flow)
+        return
+
+    # 2. Flow /tambahanak
     if flow and is_parent(chat_id):
         if text.lower() == "batal":
             del _flows[chat_id]
@@ -173,7 +245,7 @@ async def handle_freeform_text(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             return
 
-    # 2. User belum terdaftar kirim kode sebagai teks biasa
+    # 3. User belum terdaftar kirim kode sebagai teks biasa
     if _CODE_RE.match(text) and not is_parent(chat_id) and not is_ranger(chat_id):
         await _register_with_code(update, text)
         return

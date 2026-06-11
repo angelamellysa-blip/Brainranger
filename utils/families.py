@@ -314,16 +314,36 @@ def create_ranger_invite(parent_chat_id: int, profile: dict) -> str:
     _save()
     return code
 
-def _pick_color(fam: dict):
+def _available_colors(fam: dict) -> list:
     used = {r.get("ranger") for r in fam.get("rangers", {}).values()}
-    for name, emoji in RANGER_COLORS:
-        if name not in used:
-            return name, emoji
-    return RANGER_COLORS[0]  # semua terpakai (>8 — tidak mungkin, max 5)
+    return [(n, e) for n, e in RANGER_COLORS if n not in used]
 
-def use_invite(code: str, chat_id: int, name: str = "") -> dict:
+def get_available_colors(family_id: str) -> list:
+    """Warna Ranger yang belum dipakai di keluarga ini: [(nama, emoji), ...]."""
+    fam = _load()["families"].get(family_id)
+    return _available_colors(fam) if fam else []
+
+def peek_invite(code: str) -> dict:
+    """
+    Validasi kode TANPA memakainya (untuk flow pilih warna sebelum join).
+    Return {"type", "family_id", "profile"}. Raise ValueError jika tidak valid.
+    """
+    invite = _load().get("invites", {}).get(code.strip().upper())
+    if not invite or invite.get("used_by"):
+        raise ValueError("Kode tidak valid atau sudah dipakai.")
+    if _is_expired(invite):
+        raise ValueError("Kode sudah kedaluwarsa. Minta kode baru ya!")
+    return {
+        "type":      invite["type"],
+        "family_id": invite.get("family_id"),
+        "profile":   dict(invite.get("profile") or {}),
+    }
+
+def use_invite(code: str, chat_id: int, name: str = "", color: str = "") -> dict:
     """
     Pakai kode undangan. Return {"type", "family_id", "profile"}.
+    `color` (opsional, hanya tipe ranger): nama warna pilihan anak —
+    divalidasi masih tersedia; kosong = otomatis warna pertama yang bebas.
     Raise ValueError dengan pesan Indonesia yang aman ditampilkan ke user.
     """
     chat_id = int(chat_id)
@@ -362,7 +382,16 @@ def use_invite(code: str, chat_id: int, name: str = "") -> dict:
     if len(fam.get("rangers", {})) >= MAX_RANGERS_PER_FAMILY:
         raise ValueError("Keluarga ini sudah penuh.")
 
-    color_name, emoji = _pick_color(fam)
+    available = _available_colors(fam)
+    if not available:
+        available = [RANGER_COLORS[0]]  # tidak mungkin (max 5 ranger, 8 warna)
+    if color:
+        match = next(((n, e) for n, e in available if n == color), None)
+        if not match:
+            raise ValueError("Warna itu sudah dipakai. Pilih warna lain ya!")
+        color_name, emoji = match
+    else:
+        color_name, emoji = available[0]
     profile = dict(invite.get("profile") or {})
     profile["ranger"] = color_name
     profile["emoji"]  = emoji
