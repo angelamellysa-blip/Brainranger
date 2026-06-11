@@ -39,7 +39,7 @@ BrainRanger is a Telegram bot for 3 Indonesian students ("Rangers") managed by a
 | `handlers/pomodoro.py` | Full session state machine: `/mulai`, `/selesai`, `/lanjut`, `/skip`, photo collection, answer handling |
 | `handlers/ai_processor.py` | Claude API calls for image processing and answer evaluation; parses Claude's structured output |
 | `handlers/tts.py` | Google Cloud TTS podcast generation; voice varies by education level |
-| `prompts/smp.py`, `sd4.py`, `sd1.py` | Education-level-specific system prompts for Claude; define the exact output format Claude must follow |
+| `prompts/sd1.py`, `sd23.py`, `sd4.py`, `sd56.py`, `smp.py`, `sma.py` | Education-level-specific system prompts for Claude (SD Kelas 1, 2-3, 4, 5-6, SMP, SMA); define the exact output format Claude must follow |
 | `utils/state_manager.py` | Loads/saves `session_states.json` to persist per-chat session state across restarts |
 | `utils/message_splitter.py` | Splits long AI responses into ≤4000-char chunks for Telegram |
 

@@ -92,9 +92,12 @@ def get_mapel_list(chat_id):
 
 # ── Jumlah soal ujian per level ───────────────────────
 UJIAN_SOAL_COUNT = {
-    "SD Kelas 1": 10,
-    "SD Kelas 4": 15,
-    "SMP":        20,
+    "SD Kelas 1":   10,
+    "SD Kelas 2-3": 10,
+    "SD Kelas 4":   15,
+    "SD Kelas 5-6": 15,
+    "SMP":          20,
+    "SMA":          20,
 }
 
 # ── Ambil soal random untuk /latihan ─────────────────

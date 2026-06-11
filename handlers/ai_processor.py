@@ -4,22 +4,31 @@ import anthropic
 from prompts.smp import SMP_PROMPT
 from prompts.sd4 import SD4_PROMPT
 from prompts.sd1 import SD1_PROMPT
+from prompts.sd23 import SD23_PROMPT
+from prompts.sd56 import SD56_PROMPT
+from prompts.sma import SMA_PROMPT
 from config import BRAINRANGER_AI_ANT_KEY
 from utils.usage import add_tokens
 
 client = anthropic.Anthropic(api_key=BRAINRANGER_AI_ANT_KEY)
 
 PROMPTS = {
-    "SMP": SMP_PROMPT,
-    "SD Kelas 4": SD4_PROMPT,
-    "SD Kelas 1": SD1_PROMPT,
+    "SD Kelas 1":   SD1_PROMPT,
+    "SD Kelas 2-3": SD23_PROMPT,
+    "SD Kelas 4":   SD4_PROMPT,
+    "SD Kelas 5-6": SD56_PROMPT,
+    "SMP":          SMP_PROMPT,
+    "SMA":          SMA_PROMPT,
 }
 
 # Max tokens per level — cukup untuk semua soal tanpa terpotong
 MAX_TOKENS = {
-    "SMP": 6000,
-    "SD Kelas 4": 5000,
-    "SD Kelas 1": 4000,
+    "SD Kelas 1":   4000,
+    "SD Kelas 2-3": 4500,
+    "SD Kelas 4":   5000,
+    "SD Kelas 5-6": 5500,
+    "SMP":          6000,
+    "SMA":          6500,
 }
 
 def get_system_prompt(level):

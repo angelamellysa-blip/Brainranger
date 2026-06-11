@@ -27,9 +27,12 @@ def generate_podcast(rangkuman_text, child_name, level, family_id=None):
     synthesis_input = texttospeech.SynthesisInput(text=full_text)
 
     voice_map = {
-        "SMP":        ("id-ID-Standard-B", 1.0),
-        "SD Kelas 4": ("id-ID-Standard-A", 0.95),
-        "SD Kelas 1": ("id-ID-Standard-A", 0.85),
+        "SD Kelas 1":   ("id-ID-Standard-A", 0.85),
+        "SD Kelas 2-3": ("id-ID-Standard-A", 0.90),
+        "SD Kelas 4":   ("id-ID-Standard-A", 0.95),
+        "SD Kelas 5-6": ("id-ID-Standard-A", 0.95),
+        "SMP":          ("id-ID-Standard-B", 1.0),
+        "SMA":          ("id-ID-Standard-B", 1.0),
     }
 
     voice_name, speed = voice_map.get(level, ("id-ID-Standard-A", 1.0))

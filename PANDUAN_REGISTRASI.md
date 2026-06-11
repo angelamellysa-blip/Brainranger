@@ -46,7 +46,8 @@ Orang tua ketik:
 
 Bot akan bertanya:
 1. **Nama anak** — ketik namanya
-2. **Jenjang** — pilih 1 (SD kelas 1-3), 2 (SD kelas 4-6), atau 3 (SMP)
+2. **Jenjang** — pilih 1-6: SD Kelas 1 / SD Kelas 2-3 / SD Kelas 4 /
+   SD Kelas 5-6 / SMP / SMA
 
 Bot lalu memberikan kode seperti `ANAK-K3WM7P`. Bisa diulang untuk anak
 berikutnya (maksimal **5 anak per keluarga**).

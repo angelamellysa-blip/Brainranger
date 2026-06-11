@@ -26,9 +26,12 @@ from utils.families import (
 _flows = {}
 
 LEVEL_OPTIONS = {
-    "1": ("SD Kelas 1", 15),  # SD kelas 1-3
-    "2": ("SD Kelas 4", 20),  # SD kelas 4-6
-    "3": ("SMP",        25),
+    "1": ("SD Kelas 1",   15),
+    "2": ("SD Kelas 2-3", 15),
+    "3": ("SD Kelas 4",   20),
+    "4": ("SD Kelas 5-6", 20),
+    "5": ("SMP",          25),
+    "6": ("SMA",          30),
 }
 
 _CODE_RE = re.compile(r"^(BRGR|ANAK)-[A-Z0-9]{4,8}$", re.IGNORECASE)
@@ -210,16 +213,19 @@ async def handle_freeform_text(update: Update, context: ContextTypes.DEFAULT_TYP
             flow["step"] = "level"
             await update.message.reply_text(
                 f"Jenjang sekolah {text}? Ketik nomornya:\n\n"
-                f"1. SD Kelas 1-3\n"
-                f"2. SD Kelas 4-6\n"
-                f"3. SMP"
+                f"1. SD Kelas 1\n"
+                f"2. SD Kelas 2-3\n"
+                f"3. SD Kelas 4\n"
+                f"4. SD Kelas 5-6\n"
+                f"5. SMP\n"
+                f"6. SMA"
             )
             return
 
         if flow["step"] == "level":
             opt = LEVEL_OPTIONS.get(text)
             if not opt:
-                await update.message.reply_text("Ketik 1, 2, atau 3 ya!")
+                await update.message.reply_text("Ketik nomor 1-6 ya!")
                 return
             level, focus = opt
             profile = {
