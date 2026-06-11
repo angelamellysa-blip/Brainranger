@@ -526,6 +526,10 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     ranger = get_ranger(chat_id)
     if not ranger:
+        # Bukan ranger: bisa jadi parent di flow /tambahanak,
+        # atau user baru yang mengirim kode undangan
+        from handlers.onboarding import handle_freeform_text
+        await handle_freeform_text(update, context)
         return
 
     state = get_state(chat_id)

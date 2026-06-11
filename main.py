@@ -20,6 +20,7 @@ from handlers.pomodoro import (
     handle_latihan, handle_ulang, handle_ujian,
     handle_status, handle_bankinfo, handle_sticker, get_state, init_session
 )
+from handlers.onboarding import handle_invite, handle_daftar, handle_tambahanak
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -44,7 +45,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(
-            "Maaf, kamu tidak terdaftar di BrainRanger."
+            "Halo! Ini BrainRanger — bot belajar untuk keluarga. 🦸\n\n"
+            "Kamu belum terdaftar. Kalau sudah punya kode undangan:\n"
+            "• Kode BRGR-... (orang tua): ketik /daftar KODE\n"
+            "• Kode ANAK-... (anak): kirim kodenya langsung sebagai pesan"
         )
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -60,6 +64,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🦸 BrainRanger — Perintah untuk {nama}\n\n"
             "📋 STATUS & MONITORING\n"
             "/squad — Status real-time Ranger di keluargamu (poin, streak, rank)\n\n"
+            "👨‍👩‍👧 KELUARGA\n"
+            "/tambahanak — Daftarkan anak baru (dapat kode untuk si anak)\n\n"
             "🛠 LAINNYA\n"
             "/id — Lihat Chat ID kamu\n"
             "/help — Tampilkan perintah ini\n"
@@ -67,6 +73,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if is_superadmin(chat_id):
             msg += (
                 "\n👑 SUPERADMIN\n"
+                "/invite — Buat kode undangan keluarga baru\n"
                 "/usage — Laporan pemakaian AI & cost per keluarga\n"
                 "/pause — Pause semua fitur AI\n"
                 "/resume — Aktifkan lagi fitur AI\n"
@@ -396,6 +403,9 @@ def main():
     app.add_handler(CommandHandler("usage",         usage_report))
     app.add_handler(CommandHandler("pause",         pause_ai))
     app.add_handler(CommandHandler("resume",        resume_ai))
+    app.add_handler(CommandHandler("invite",        handle_invite))
+    app.add_handler(CommandHandler("daftar",        handle_daftar))
+    app.add_handler(CommandHandler("tambahanak",    handle_tambahanak))
     app.add_handler(MessageHandler(filters.PHOTO,       handle_photo))
     app.add_handler(MessageHandler(
         filters.Document.PDF |

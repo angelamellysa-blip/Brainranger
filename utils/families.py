@@ -16,8 +16,10 @@ SECURITY INVARIANTS — wajib dijaga oleh semua kode yang memakai modul ini:
    kalau proses mati di tengah penulisan.
 """
 
+import datetime
 import json
 import os
+import secrets
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -228,9 +230,146 @@ def add_ranger(family_id: str, chat_id: int, profile: dict):
     fam = data["families"].get(family_id)
     if not fam:
         raise ValueError(f"keluarga {family_id} tidak ditemukan")
+    if len(fam.get("rangers", {})) >= MAX_RANGERS_PER_FAMILY:
+        raise ValueError(f"keluarga sudah punya {MAX_RANGERS_PER_FAMILY} ranger (maksimal)")
 
     allowed = {"name", "ranger", "emoji", "level", "focus_minutes", "break_minutes", "sessions"}
     fam.setdefault("rangers", {})[str(chat_id)] = {
         k: v for k, v in profile.items() if k in allowed
     }
     _save()
+
+# ── Invite codes (onboarding Phase 2) ─────────────────────
+# Kode dibuat dengan modul `secrets` (CSPRNG), single-use, kedaluwarsa
+# INVITE_TTL_DAYS hari, dan terikat tipe (kode parent tidak bisa dipakai
+# mendaftar ranger, dan sebaliknya).
+
+INVITE_TTL_DAYS        = 7
+MAX_RANGERS_PER_FAMILY = 5
+_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # tanpa karakter mirip (0/O, 1/I/L)
+
+RANGER_COLORS = [
+    ("Ranger Merah",  "🔴"), ("Ranger Hijau",  "🟢"),
+    ("Ranger Ungu",   "🟣"), ("Ranger Oranye", "🟠"),
+    ("Ranger Biru",   "🔵"), ("Ranger Kuning", "🟡"),
+    ("Ranger Putih",  "⚪"), ("Ranger Hitam",  "⚫"),
+]
+
+def _gen_code(prefix: str) -> str:
+    data = _load()
+    invites = data.setdefault("invites", {})
+    while True:
+        code = prefix + "-" + "".join(secrets.choice(_CODE_ALPHABET) for _ in range(6))
+        if code not in invites:
+            return code
+
+def _is_expired(invite: dict) -> bool:
+    try:
+        created = datetime.date.fromisoformat(invite.get("created", ""))
+        return (datetime.date.today() - created).days > INVITE_TTL_DAYS
+    except ValueError:
+        return True
+
+def _prune_invites(invites: dict):
+    for code in [c for c, inv in invites.items() if inv.get("used_by") or _is_expired(inv)]:
+        del invites[code]
+
+def create_parent_invite() -> str:
+    """Kode undangan keluarga baru. HANYA boleh dipanggil untuk superadmin."""
+    data = _load()
+    invites = data.setdefault("invites", {})
+    _prune_invites(invites)
+    code = _gen_code("BRGR")
+    invites[code] = {
+        "type":    "parent",
+        "created": str(datetime.date.today()),
+        "used_by": None,
+    }
+    _save()
+    return code
+
+def create_ranger_invite(parent_chat_id: int, profile: dict) -> str:
+    """Kode undangan anak, terikat ke keluarga si parent pemanggil."""
+    found = _find_chat_id(parent_chat_id)
+    if not found or found[0] != "parent":
+        raise ValueError("hanya parent terdaftar yang bisa menambah anak")
+    fam_id = found[1]
+
+    data = _load()
+    fam = data["families"][fam_id]
+    if len(fam.get("rangers", {})) >= MAX_RANGERS_PER_FAMILY:
+        raise ValueError(f"keluarga sudah punya {MAX_RANGERS_PER_FAMILY} ranger (maksimal)")
+
+    invites = data.setdefault("invites", {})
+    _prune_invites(invites)
+    code = _gen_code("ANAK")
+    allowed = {"name", "level", "focus_minutes", "break_minutes", "sessions"}
+    invites[code] = {
+        "type":      "ranger",
+        "family_id": fam_id,
+        "profile":   {k: v for k, v in profile.items() if k in allowed},
+        "created":   str(datetime.date.today()),
+        "used_by":   None,
+    }
+    _save()
+    return code
+
+def _pick_color(fam: dict):
+    used = {r.get("ranger") for r in fam.get("rangers", {}).values()}
+    for name, emoji in RANGER_COLORS:
+        if name not in used:
+            return name, emoji
+    return RANGER_COLORS[0]  # semua terpakai (>8 — tidak mungkin, max 5)
+
+def use_invite(code: str, chat_id: int, name: str = "") -> dict:
+    """
+    Pakai kode undangan. Return {"type", "family_id", "profile"}.
+    Raise ValueError dengan pesan Indonesia yang aman ditampilkan ke user.
+    """
+    chat_id = int(chat_id)
+    if _find_chat_id(chat_id):
+        raise ValueError("Kamu sudah terdaftar di BrainRanger!")
+
+    data = _load()
+    invites = data.setdefault("invites", {})
+    invite = invites.get(code.strip().upper())
+    if not invite or invite.get("used_by"):
+        raise ValueError("Kode tidak valid atau sudah dipakai.")
+    if _is_expired(invite):
+        del invites[code.strip().upper()]
+        _save()
+        raise ValueError("Kode sudah kedaluwarsa. Minta kode baru ya!")
+
+    code = code.strip().upper()
+    if invite["type"] == "parent":
+        nums = [int(fid.split("_")[1]) for fid in data["families"] if fid.startswith("fam_")]
+        fam_id = f"fam_{(max(nums) + 1) if nums else 1:03d}"
+        data["families"][fam_id] = {
+            "parent_chat_id": chat_id,
+            "parent_name":    str(name)[:50] or "Orang Tua",
+            "plan":           "trial",
+            "rangers":        {},
+        }
+        invite["used_by"] = chat_id
+        _save()
+        return {"type": "parent", "family_id": fam_id, "profile": None}
+
+    # type == "ranger"
+    fam_id = invite["family_id"]
+    fam = data["families"].get(fam_id)
+    if not fam:
+        raise ValueError("Keluarga untuk kode ini sudah tidak ada. Minta kode baru ya!")
+    if len(fam.get("rangers", {})) >= MAX_RANGERS_PER_FAMILY:
+        raise ValueError("Keluarga ini sudah penuh.")
+
+    color_name, emoji = _pick_color(fam)
+    profile = dict(invite.get("profile") or {})
+    profile["ranger"] = color_name
+    profile["emoji"]  = emoji
+    fam.setdefault("rangers", {})[str(chat_id)] = profile
+    invite["used_by"] = chat_id
+    _save()
+    result = dict(profile)
+    result["chat_id"]   = chat_id
+    result["family_id"] = fam_id
+    return {"type": "ranger", "family_id": fam_id, "profile": result}
