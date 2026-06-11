@@ -16,11 +16,13 @@ def get_tts_client():
         return texttospeech.TextToSpeechClient(credentials=credentials)
     return texttospeech.TextToSpeechClient()
 
-def generate_podcast(rangkuman_text, child_name, level):
+def generate_podcast(rangkuman_text, child_name, level, family_id=None):
+    from utils.usage import add_tts_chars
     client = get_tts_client()
 
     intro = f"Hei {child_name}! Ini rangkuman materi hari ini. Yuk dengerin baik-baik!"
     full_text = f"{intro}\n\n{rangkuman_text}"
+    add_tts_chars(family_id, len(full_text))
 
     synthesis_input = texttospeech.SynthesisInput(text=full_text)
 

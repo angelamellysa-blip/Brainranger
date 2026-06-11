@@ -10,3 +10,5 @@ families.json.*
 session_states.json
 bank_soal.json
 points_history.json
+usage.json
+usage.json.*

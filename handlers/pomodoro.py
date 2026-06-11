@@ -6,7 +6,11 @@ import os
 import random
 from telegram import Update
 from telegram.ext import ContextTypes
-from config import get_ranger, get_parent_of, SUPERADMIN_CHAT_ID
+from config import get_ranger, get_parent_of, get_plan_of, SUPERADMIN_CHAT_ID
+from utils.usage import (
+    count_event, get_event_count, get_limits,
+    is_ai_paused, check_budget,
+)
 from handlers.ai_processor import process_photos, process_text_content, evaluate_answer
 from utils.doc_extractor import extract_document
 from utils.message_splitter import split_message, to_html, strip_markdown
@@ -103,6 +107,15 @@ async def handle_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ── Handler foto ──────────────────────────────────────
+async def _send_budget_alert_if_needed(bot):
+    """Cek budget harian; kalau baru saja terlampaui, AI auto-pause + alert superadmin."""
+    alert = check_budget()
+    if alert and SUPERADMIN_CHAT_ID:
+        try:
+            await bot.send_message(chat_id=SUPERADMIN_CHAT_ID, text=alert)
+        except Exception as e:
+            print(f"Gagal kirim budget alert: {e}")
+
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     ranger = get_ranger(chat_id)
@@ -111,6 +124,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state = get_state(chat_id)
     if not state.get("waiting_for_photo"):
+        return
+
+    limit_foto = get_limits(get_plan_of(chat_id))["photos_per_session"]
+    if len(state["pending_photos"]) >= limit_foto:
+        await update.message.reply_text(
+            f"{ranger['emoji']} Maksimal {limit_foto} foto per sesi ya!\n"
+            f"Ketik /selesai untuk memproses foto yang sudah dikirim."
+        )
         return
 
     photo = await update.message.photo[-1].get_file()
@@ -136,6 +157,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"{ranger['emoji']} Kamu belum mulai sesi belajar.\n"
             f"Ketik /mulai dulu, baru kirim foto atau dokumen ya!"
+        )
+        return
+
+    limit_docs = get_limits(get_plan_of(chat_id))["docs"]
+    if get_event_count(chat_id, "docs") >= limit_docs:
+        await update.message.reply_text(
+            f"{ranger['emoji']} Kuota upload dokumen hari ini sudah habis "
+            f"(maksimal {limit_docs}/hari).\n"
+            f"Kamu masih bisa kirim foto buku ya! 📸"
         )
         return
 
@@ -201,6 +231,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["document_ready"]        = True
     state["pending_photos"]        = []   # clear foto jika ada
     save_all_states(session_state)
+    count_event(chat_id, "docs")
 
     truncate_note = (
         "\n\n⚠️ Dokumen terlalu panjang — hanya 6.000 kata pertama yang diproses."
@@ -230,6 +261,24 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"{ranger['emoji']} Tidak ada foto yang sedang menunggu diproses.\n"
             f"Ketik /mulai untuk mulai sesi belajar baru ya!"
+        )
+        return
+
+    # ── Proteksi cost ────────────────────────────────
+    if is_ai_paused():
+        await update.message.reply_text(
+            f"{ranger['emoji']} BrainRanger lagi istirahat sebentar.\n"
+            f"Coba lagi nanti ya! 🙏"
+        )
+        return
+
+    limit_sesi = get_limits(get_plan_of(chat_id))["sessions"]
+    if get_event_count(chat_id, "sessions") >= limit_sesi:
+        await update.message.reply_text(
+            f"{ranger['emoji']} Kuota belajar hari ini sudah habis "
+            f"(maksimal {limit_sesi} sesi/hari).\n"
+            f"Hebat banget rajinnya! Lanjut besok ya 💪\n\n"
+            f"Kamu masih bisa /latihan atau /ulang soal dari bank soal!"
         )
         return
 
@@ -265,6 +314,8 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Coba lagi ya!"
             )
             return
+        count_event(chat_id, "sessions")
+        await _send_budget_alert_if_needed(context.bot)
 
     # ── Branch: foto ─────────────────────────────────
     else:
@@ -294,6 +345,8 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Coba lagi ya!"
             )
             return
+        count_event(chat_id, "sessions")
+        await _send_budget_alert_if_needed(context.bot)
 
         # Cek apakah foto tidak terbaca
         if result["rangkuman"].startswith("FOTO_TIDAK_TERBACA"):
@@ -362,7 +415,8 @@ async def handle_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async def _gen_audio():
         try:
             return await asyncio.to_thread(
-                generate_podcast, rangkuman_tts, ranger["name"], ranger["level"]
+                generate_podcast, rangkuman_tts, ranger["name"], ranger["level"],
+                ranger.get("family_id")
             )
         except Exception as e:
             print(f"TTS error: {e}")
@@ -500,15 +554,27 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pembahasan = state["pembahasan"][current_q] if current_q < len(state["pembahasan"]) else ""
     soal = state["questions"][current_q]
 
-    try:
-        verdict, catatan = await asyncio.to_thread(
-            evaluate_answer,
-            soal,
-            answer,
-            correct_answer,
-            ranger["level"]
-        )
-    except Exception:
+    # Kalau AI di-pause atau kuota evaluasi harian habis → fallback non-AI
+    use_ai = (
+        not is_ai_paused()
+        and get_event_count(chat_id, "evals") < get_limits(get_plan_of(chat_id))["evals"]
+    )
+    verdict = None
+    if use_ai:
+        try:
+            verdict, catatan = await asyncio.to_thread(
+                evaluate_answer,
+                soal,
+                answer,
+                correct_answer,
+                ranger["level"],
+                ranger.get("family_id")
+            )
+            count_event(chat_id, "evals")
+            await _send_budget_alert_if_needed(context.bot)
+        except Exception:
+            verdict = None
+    if verdict is None:
         simple_match = (
             answer.lower() == correct_answer.lower() or
             answer.lower() in correct_answer.lower() or

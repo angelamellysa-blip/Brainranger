@@ -5,6 +5,7 @@ from prompts.smp import SMP_PROMPT
 from prompts.sd4 import SD4_PROMPT
 from prompts.sd1 import SD1_PROMPT
 from config import BRAINRANGER_AI_ANT_KEY
+from utils.usage import add_tokens
 
 client = anthropic.Anthropic(api_key=BRAINRANGER_AI_ANT_KEY)
 
@@ -56,6 +57,8 @@ def process_photos(photo_bytes_list, ranger):
     )
 
     raw = response.content[0].text
+    add_tokens(ranger.get("family_id"), "sonnet",
+               response.usage.input_tokens, response.usage.output_tokens)
     print(f"process_photos tokens used: {response.usage.output_tokens}/{max_tokens}")
     return parse_response(raw)
 
@@ -87,11 +90,13 @@ def process_text_content(text: str, ranger: dict) -> dict:
     )
 
     raw = response.content[0].text
+    add_tokens(ranger.get("family_id"), "sonnet",
+               response.usage.input_tokens, response.usage.output_tokens)
     print(f"process_text_content tokens used: {response.usage.output_tokens}/{max_tokens}")
     return parse_response(raw)
 
 
-def evaluate_answer(soal, jawaban_anak, kunci_jawaban, level):
+def evaluate_answer(soal, jawaban_anak, kunci_jawaban, level, family_id=None):
     """
     Returns: (verdict, catatan)
     verdict : "BENAR" | "SEBAGIAN" | "SALAH"
@@ -117,6 +122,8 @@ SALAH"""
         messages=[{"role": "user", "content": prompt}]
     )
 
+    add_tokens(family_id, "haiku",
+               response.usage.input_tokens, response.usage.output_tokens)
     raw = response.content[0].text.strip().upper()
 
     if raw.startswith("BENAR"):

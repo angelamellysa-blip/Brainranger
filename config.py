@@ -13,7 +13,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 from utils.families import (
     SUPERADMIN_CHAT_ID,
     get_ranger, is_ranger, is_parent, is_superadmin,
-    get_parent_of, get_parent_name,
+    get_parent_of, get_parent_name, get_plan_of,
     get_family_rangers, get_all_families, get_all_rangers,
 )
 

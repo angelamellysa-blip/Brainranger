@@ -152,6 +152,13 @@ def get_parent_of(ranger_chat_id):
             return fam.get("parent_chat_id") or None
     return None
 
+def get_plan_of(chat_id) -> str:
+    """Plan keluarga si chat_id (parent atau ranger). Default paling ketat: trial."""
+    found = _find_chat_id(chat_id)
+    if not found:
+        return "trial"
+    return _load()["families"][found[1]].get("plan", "trial")
+
 def get_parent_name(parent_chat_id) -> str:
     for fam in _load()["families"].values():
         if fam.get("parent_chat_id") == parent_chat_id:

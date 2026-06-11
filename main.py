@@ -67,6 +67,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if is_superadmin(chat_id):
             msg += (
                 "\n👑 SUPERADMIN\n"
+                "/usage — Laporan pemakaian AI & cost per keluarga\n"
+                "/pause — Pause semua fitur AI\n"
+                "/resume — Aktifkan lagi fitur AI\n"
                 "/testreminder — Kirim reminder belajar ke semua Ranger sekarang\n"
                 "/restart — Restart bot\n"
             )
@@ -287,6 +290,59 @@ async def test_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await send_reminders(context)
 
+async def usage_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_superadmin(update.effective_chat.id):
+        return
+    from utils.usage import (
+        get_usage_summary, get_today_cost, is_ai_paused, get_pause_info,
+        DAILY_BUDGET_USD,
+    )
+    summary  = get_usage_summary(days=7)
+    rangers  = summary.pop("_rangers", {})
+    families = get_all_families()
+
+    msg = "📈 Usage Report (7 hari terakhir)\n━━━━━━━━━━━━━━━\n\n"
+    if not summary:
+        msg += "Belum ada pemakaian AI tercatat.\n"
+    for fid, u in sorted(summary.items()):
+        fam_name = families.get(fid, {}).get("parent_name") or fid
+        sonnet = u.get("sonnet_in", 0) + u.get("sonnet_out", 0)
+        haiku  = u.get("haiku_in", 0) + u.get("haiku_out", 0)
+        # Hitung event hari ini untuk ranger-ranger keluarga ini
+        fam_ranger_ids = {str(cid) for cid in families.get(fid, {}).get("rangers", {})}
+        sesi  = sum(r.get("sessions", 0) for cid, r in rangers.items() if cid in fam_ranger_ids)
+        evals = sum(r.get("evals", 0) for cid, r in rangers.items() if cid in fam_ranger_ids)
+        msg += (
+            f"👨‍👩‍👧 {fam_name} ({fid})\n"
+            f"   Hari ini: {sesi} sesi, {evals} evaluasi — ${u['today_cost']:.3f}\n"
+            f"   7 hari: Sonnet {sonnet:,} tok | Haiku {haiku:,} tok | "
+            f"TTS {u.get('tts_chars', 0):,} kar\n"
+            f"   💰 Estimasi 7 hari: ${u['cost']:.2f}\n\n"
+        )
+
+    today_cost = get_today_cost()
+    pct = round(today_cost / DAILY_BUDGET_USD * 100) if DAILY_BUDGET_USD else 0
+    msg += f"━━━━━━━━━━━━━━━\n💵 Total hari ini: ${today_cost:.3f} / ${DAILY_BUDGET_USD:.2f} ({pct}%)\n"
+    if is_ai_paused():
+        msg += f"🛑 AI sedang PAUSED — {get_pause_info()}\nKetik /resume untuk aktifkan.\n"
+    else:
+        msg += "🟢 AI aktif\n"
+    await update.message.reply_text(msg)
+
+async def pause_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_superadmin(update.effective_chat.id):
+        return
+    from utils.usage import set_ai_paused
+    set_ai_paused(True, "di-pause manual oleh superadmin", manual=True)
+    await update.message.reply_text("🛑 Semua fitur AI di-PAUSE. Ketik /resume untuk aktifkan lagi.")
+
+async def resume_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_superadmin(update.effective_chat.id):
+        return
+    from utils.usage import set_ai_paused
+    set_ai_paused(False)
+    await update.message.reply_text("🟢 Fitur AI aktif kembali!")
+
 async def restart_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_superadmin(update.effective_chat.id):
         return
@@ -337,6 +393,9 @@ def main():
     app.add_handler(CommandHandler("bankinfo",       handle_bankinfo))
     app.add_handler(CommandHandler("testreminder",  test_reminder))
     app.add_handler(CommandHandler("restart",       restart_bot))
+    app.add_handler(CommandHandler("usage",         usage_report))
+    app.add_handler(CommandHandler("pause",         pause_ai))
+    app.add_handler(CommandHandler("resume",        resume_ai))
     app.add_handler(MessageHandler(filters.PHOTO,       handle_photo))
     app.add_handler(MessageHandler(
         filters.Document.PDF |
